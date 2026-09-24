@@ -1,0 +1,17 @@
+{
+  "receiver_url": "http://piaware.local/skyaware/data/aircraft.json",
+  "listen_host": "127.0.0.1",
+  "listen_port": 8765,
+  "poll_seconds": 3,
+  "max_aircraft": 12,
+  "max_seen_seconds": 45,
+  "max_position_age_seconds": 90,
+  "receiver_lat": null,
+  "receiver_lon": null,
+  "max_distance_miles": null,
+  "use_adsbdb": true,
+  "use_hexdb": true,
+  "use_adsb_fi": true,
+  "use_faa_registry": true,
+  "auto_download_logos": true
+}

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Local Air Traffic</title>
+  <link rel="stylesheet" href="/style.css?v=20260924-4">
+  <link rel="stylesheet" href="/motion.css?v=20260924-4">
+</head>
+<body>
+  <header><div class="display-title"><span>LOCAL AIR TRAFFIC</span><span id="distance-scope" class="display-scope" hidden></span></div><div class="status-group"><span id="count">0 AIRCRAFT</span><span id="status">CONNECTING</span></div></header>
+  <main><div class="columns"><span>FLIGHT</span><span>ROUTE</span><span>AIRCRAFT</span><span>DISTANCE</span></div><div id="flights" role="list"></div><div id="empty" hidden>Waiting for aircraft from PiAware</div></main>
+  <script src="/app.js?v=20260924-33"></script>
+</body>
+</html>

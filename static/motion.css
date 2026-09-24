@@ -1,0 +1,42 @@
+.motion {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .42em;
+}
+
+.motion-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  line-height: 1;
+  font-size: 1.65em;
+  transform-origin: center;
+}
+
+.route .arrow {
+  width: 1.15em;
+  height: 1em;
+  font-size: 1em;
+  font-weight: 800;
+  justify-content: center;
+  transform: none;
+}
+
+.route-arrow-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.altitude-arrow {
+  display: inline-block;
+  font-size: 1.4em;
+  font-weight: 800;
+  line-height: .7;
+  transform: scaleX(1.75);
+  transform-origin: center;
+  vertical-align: -.06em;
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Republic Airways star symbol">
+  <defs>
+    <path id="star" d="M50 4l3.15 9.69h10.19l-8.25 5.99 3.15 9.69L50 23.38l-8.24 5.99 3.15-9.69-8.25-5.99h10.19z"/>
+  </defs>
+  <g fill="#9ba5ae">
+    <use href="#star"/>
+    <use href="#star" transform="rotate(36 50 50)"/>
+    <use href="#star" transform="rotate(72 50 50)"/>
+    <use href="#star" transform="rotate(108 50 50)"/>
+    <use href="#star" transform="rotate(144 50 50)"/>
+    <use href="#star" transform="rotate(180 50 50)"/>
+    <use href="#star" transform="rotate(216 50 50)"/>
+    <use href="#star" transform="rotate(252 50 50)"/>
+    <use href="#star" transform="rotate(288 50 50)"/>
+    <use href="#star" transform="rotate(324 50 50)"/>
+  </g>
+</svg>

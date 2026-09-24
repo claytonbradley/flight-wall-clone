@@ -1,0 +1,25 @@
+[Unit]
+Description=FlightWall local ADS-B display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flightwall
+Group=flightwall
+WorkingDirectory=/opt/flightwall
+Environment=PYTHONUNBUFFERED=1
+Environment=FLIGHTWALL_LOGO_CACHE=/var/cache/flightwall/logos
+Environment=FLIGHTWALL_FAA_INDEX=/var/cache/flightwall/faa-aircraft.json
+CacheDirectory=flightwall
+CacheDirectoryMode=0755
+ExecStart=/usr/bin/python3 /opt/flightwall/app.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

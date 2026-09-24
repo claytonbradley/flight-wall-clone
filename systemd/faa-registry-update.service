@@ -1,0 +1,19 @@
+[Unit]
+Description=Update the Local Air Traffic FAA aircraft index
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=flightwall
+Group=flightwall
+WorkingDirectory=/opt/flightwall
+Environment=PYTHONUNBUFFERED=1
+CacheDirectory=flightwall
+CacheDirectoryMode=0755
+ExecStart=/usr/bin/python3 /opt/flightwall/update_faa_registry.py --output /var/cache/flightwall/faa-aircraft.json
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+

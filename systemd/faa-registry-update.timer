@@ -1,0 +1,10 @@
+[Unit]
+Description=Update the FAA aircraft index nightly at 1:00 AM
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+Persistent=true
+Unit=faa-registry-update.service
+
+[Install]
+WantedBy=timers.target

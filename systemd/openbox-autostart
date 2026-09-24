@@ -1,0 +1,10 @@
+#!/bin/sh
+xset s off
+xset -dpms
+xset s noblank
+(
+  while true; do
+    chromium --kiosk --no-first-run --noerrdialogs --password-store=basic --disable-session-crashed-bubble http://127.0.0.1:8765
+    sleep 3
+  done
+) &
