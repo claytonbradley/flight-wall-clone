@@ -105,7 +105,7 @@ To add another carrier, place a trusted SVG in `static/logos` (or `/opt/flightwa
 
 ## Configuration
 
-`config.json` is local to each installation. `poll_seconds` defaults to 3, `max_aircraft` to 12, `max_seen_seconds` to 45, and `max_position_age_seconds` to 90. `listen_port` defaults to 8765. The backend never changes the PiAware machine. `examples/aircraft.json` illustrates receiver input fields; its `now` value is deliberately zero and is not a live feed.
+`config.json` is local to each installation. `poll_seconds` defaults to 3, `max_aircraft` to 12, `max_seen_seconds` to 45, and `max_position_age_seconds` to 90. Set `show_airport_names` to `true` to show shortened airport names beneath route identifiers or `false` for identifiers only; it defaults to `true`. `listen_port` defaults to 8765. The backend never changes the PiAware machine. `examples/aircraft.json` illustrates receiver input fields; its `now` value is deliberately zero and is not a live feed.
 
 ## Tests
 

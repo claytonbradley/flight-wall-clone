@@ -36,6 +36,7 @@ FAA_INDEX = Path(os.environ.get("FLIGHTWALL_FAA_INDEX", ROOT / "faa-aircraft.jso
 HEX = re.compile(r"^[0-9a-f]{6}$", re.I)
 CALLSIGN = re.compile(r"^[A-Z0-9]{2,8}$")
 LOGO = re.compile(r"^[A-Z0-9]{2,4}$")
+AIRPORT_NAME_MAX_LENGTH = 34
 LOGO_FILE = re.compile(r"^([A-Z0-9]{2,4})\.(svg|png)$")
 LOGO_STOP_WORDS = {"AIR", "AIRLINE", "AIRLINES", "AIRWAYS", "THE", "GROUP", "HOLDINGS", "INC", "LLC", "LTD"}
 BUNDLED_AIRLINE_LOGOS = {
@@ -74,6 +75,7 @@ MANUFACTURER_NAMES = {
     "DASSAULT": "Dassault", "EMBRAER": "Embraer",
     "GULFSTREAM": "Gulfstream", "GULFSTREAM AEROSPACE": "Gulfstream",
     "PILATUS": "Pilatus", "PILATUS AIRCRAFT LTD": "Pilatus", "PIPER": "Piper",
+    "AVIONS DE TRANSPORT REGIONAL": "ATR",
 }
 PIAWARE_CATEGORY_ICONS = {
     "A1": "light", "A2": "small-jet", "A3": "airliner", "A4": "heavy-twin",
@@ -298,6 +300,10 @@ def aircraft_display_name(manufacturer, model, type_code):
                 model = family.group(1)
         if maker == "Pilatus" and re.match(r"^PC-?12(?:[/\s-].*)?$", model.upper()):
             model = "PC-12"
+        if maker == "ATR":
+            atr_model = re.match(r"^ATR[-\s]?(42|72)(?:[-\s].*)?$", model.upper())
+            if atr_model:
+                model = f"ATR {atr_model.group(1)}"
         if maker == "Boeing" and type_code not in AIRCRAFT_MODEL_NAMES:
             # Enrichment databases often expose Boeing customer codes (for example
             # 717 2BD or 737NG 7H4/W). Keep the family/series and discard the suffix.
@@ -326,6 +332,12 @@ def aircraft_icon_kind(category, aircraft_type=None, manufacturer=None, model=No
         r"M20[PT]|PC12|TBM[789]|BE(?:20|33|35|36|55|58|9L))$",
         type_code,
     )
+    turboprop_type = re.match(
+        r"^(?:AT4[23567]|AT7[2356]|DH8[ABCD]|DHC6|SF34|JS3[12]|E120|SW4)$",
+        type_code,
+    )
+    if turboprop_type or "ATR " in description:
+        return "turboprop"
     if propeller_type or any(word in description for word in ("SKYHAWK", "SINGLE ENGINE PISTON", "TURBOPROP")):
         return "single-prop"
     return PIAWARE_CATEGORY_ICONS.get(str(category or "").strip().upper(), "unknown")
@@ -461,6 +473,23 @@ def faa_aircraft_info(hex_code):
     }
 
 
+
+def airport_display_name(value):
+    name = str(value or "").strip()
+    if not name:
+        return None
+    shortened = re.sub(r"\s+(?:Airport|Field)$", "", name, flags=re.IGNORECASE).strip()
+    label = shortened or name
+    return label if len(label) <= AIRPORT_NAME_MAX_LENGTH else (
+        label[:AIRPORT_NAME_MAX_LENGTH - 1].rstrip() + "…")
+
+
+def airline_display_name(value):
+    name = str(value or "").strip()
+    if not name:
+        return None
+    brand, separator, _ = name.partition(" - ")
+    return brand.strip() if separator and brand.strip() else name
 def adsbdb_aircraft_info(hex_code, callsign):
     aircraft_endpoint = f"https://api.adsbdb.com/v0/aircraft/{hex_code}"
     endpoint = aircraft_endpoint
@@ -505,6 +534,13 @@ def adsbdb_aircraft_info(hex_code, callsign):
             return None
         return obj.get("iata_code") or obj.get("icao_code")
 
+    def airport_name(which):
+        obj = route.get(which)
+        if not isinstance(obj, dict):
+            return None
+        value = obj.get("name") or obj.get("municipality")
+        return airport_display_name(value)
+
     def airport_coordinate(which, coordinate):
         obj = route.get(which)
         if not isinstance(obj, dict):
@@ -522,7 +558,9 @@ def adsbdb_aircraft_info(hex_code, callsign):
         "airline_iata": airline.get("iata"),
         "display_callsign": route.get("callsign_iata") or callsign,
         "origin": airport("origin"),
+        "origin_name": airport_name("origin"),
         "destination": airport("destination"),
+        "destination_name": airport_name("destination"),
         "_origin_lat": airport_coordinate("origin", "latitude"),
         "_origin_lon": airport_coordinate("origin", "longitude"),
         "_destination_lat": airport_coordinate("destination", "latitude"),
@@ -578,9 +616,15 @@ def adsb_im_route_info(callsign, latitude, longitude, track=None):
     def code(airport):
         return airport.get("iata") or airport.get("icao")
 
+    def name(airport):
+        value = airport.get("name") or airport.get("municipality")
+        return airport_display_name(value)
+
     return {
         "origin": code(origin),
+        "origin_name": name(origin),
         "destination": code(destination),
+        "destination_name": name(destination),
         "_origin_lat": origin["lat"],
         "_origin_lon": origin["lon"],
         "_destination_lat": destination["lat"],
@@ -604,6 +648,10 @@ def lookup(hex_code, callsign, latitude=None, longitude=None, track=None):
             try:
                 route_info = adsb_im_route_info(callsign, latitude, longitude, track)
                 if route_info:
+                    for side in ("origin", "destination"):
+                        name_field = f"{side}_name"
+                        if route_info.get(side) == info.get(side) and not route_info.get(name_field):
+                            route_info[name_field] = info.get(name_field)
                     info.update(route_info)
                     route_found = True
             except (HTTPError, URLError, TimeoutError, ValueError, OSError) as exc:
@@ -773,6 +821,7 @@ def correct_reversed_route(row):
 
         if near_origin_arrival or near_destination_departure or heading_to_origin:
             row["origin"], row["destination"] = row["destination"], row["origin"]
+            row["origin_name"], row["destination_name"] = row.get("destination_name"), row.get("origin_name")
     finally:
         for field in private_fields:
             row.pop(field, None)
@@ -835,7 +884,12 @@ def process(source):
                     PENDING.add(key)
                     POOL.submit(lookup, *key, row.get("_lat"), row.get("_lon"), row.get("_track"))
         row.update(enrichment or {})
+        if row.get("airline"):
+            row["airline"] = airline_display_name(row["airline"])
         correct_reversed_route(row)
+        if not CONFIG.get("show_airport_names", True):
+            row.pop("origin_name", None)
+            row.pop("destination_name", None)
         receiver_aircraft_type = row.pop("_receiver_aircraft_type", None)
         if not row.get("aircraft_type") and receiver_aircraft_type:
             row["aircraft_type"] = receiver_aircraft_type

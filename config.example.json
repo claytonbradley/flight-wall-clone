@@ -9,6 +9,7 @@
   "receiver_lat": null,
   "receiver_lon": null,
   "max_distance_miles": null,
+  "show_airport_names": true,
   "use_adsbdb": true,
   "use_hexdb": true,
   "use_adsb_fi": true,

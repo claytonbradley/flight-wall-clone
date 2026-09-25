@@ -94,6 +94,22 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(app.distance_miles(35.0, -82.0, 35.0, -82.0), 0)
         self.assertAlmostEqual(app.distance_miles(35.0, -82.0, 35.1, -82.0), 6.91, places=1)
 
+    def test_airport_display_name_removes_only_trailing_words(self):
+        self.assertEqual(app.airport_display_name("Seattle Tacoma International Airport"), "Seattle Tacoma International")
+        self.assertEqual(app.airport_display_name("Love Field"), "Love")
+        self.assertEqual(app.airport_display_name("Springfield Airfield"), "Springfield Airfield")
+        self.assertEqual(app.airport_display_name("Savannah Hilton Head International Airport"), "Savannah Hilton Head International")
+        long_name = app.airport_display_name("Baltimore Washington International Thurgood Marshall Airport")
+        self.assertEqual(len(long_name), app.AIRPORT_NAME_MAX_LENGTH)
+        self.assertTrue(long_name.endswith("…"))
+        self.assertIsNone(app.airport_display_name(None))
+
+
+    def test_airline_display_name_prefers_brand_before_legal_expansion(self):
+        self.assertEqual(app.airline_display_name("Avianca - Aerovias Nacionales de Colombia, S.A."), "Avianca")
+        self.assertEqual(app.airline_display_name("Delta Air Lines"), "Delta Air Lines")
+        self.assertEqual(app.airline_display_name("TAP - Transportes Aereos Portugueses"), "TAP")
+        self.assertIsNone(app.airline_display_name(None))
     def test_cardinal_direction(self):
         expected = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW", 360: "N"}
         for track, direction in expected.items():
@@ -111,12 +127,18 @@ class AircraftTests(unittest.TestCase):
     def test_reverses_stale_opposite_leg_when_arriving_at_listed_origin(self):
         row = {
             "origin": "GSP", "destination": "PHL",
+            "origin_name": "Greenville Spartanburg International Airport",
+            "destination_name": "Philadelphia International Airport",
             "_lat": 34.802, "_lon": -82.117, "_track": 216, "_baro_rate": -1024,
             "_origin_lat": 34.895699, "_origin_lon": -82.218903,
             "_destination_lat": 39.871899, "_destination_lon": -75.241097,
         }
         app.correct_reversed_route(row)
         self.assertEqual((row["origin"], row["destination"]), ("PHL", "GSP"))
+        self.assertEqual(
+            (row["origin_name"], row["destination_name"]),
+            ("Philadelphia International Airport", "Greenville Spartanburg International Airport"),
+        )
         self.assertFalse(any(key.startswith("_") for key in row))
 
     def test_keeps_route_when_departing_from_listed_origin(self):
@@ -139,6 +161,7 @@ class AircraftTests(unittest.TestCase):
             "max_position_age_seconds": 90,
             "max_distance_miles": None,
             "max_aircraft": 12,
+            "show_airport_names": True,
             "use_adsbdb": False,
             "receiver_url": "http://receiver.test/custom.json",
         }
@@ -149,22 +172,33 @@ class AircraftTests(unittest.TestCase):
             {"hex": "invalid", "flight": "BAD1", "seen": 1},
         ]}
         enrichment = {
-            "airline": "Delta Air Lines", "airline_icao": "DAL", "display_callsign": "DL123",
+            "airline": "Delta Air Lines - Delta Air Lines, Inc.", "airline_icao": "DAL", "display_callsign": "DL123",
             "origin": "ATL", "destination": "CLT", "aircraft_type": "A321",
+            "origin_name": "Hartsfield Jackson Atlanta International",
+            "destination_name": "Charlotte Douglas International",
         }
         cache = {("abcdef", "DAL123"): (enrichment, app.time.time() + 60)}
         with patch.object(app, "CONFIG", config), patch.object(app, "CACHE", cache), patch.object(app, "PENDING", set()), patch.object(app, "MOTION_HISTORY", {}):
             rows = app.process(source)
         self.assertEqual([row["hex"] for row in rows], ["abcdef", "123456"])
         self.assertEqual(rows[0]["display_callsign"], "DL123")
+        self.assertEqual(rows[0]["airline"], "Delta Air Lines")
         self.assertEqual(rows[0]["logo_ext"], "svg")
         self.assertEqual(rows[0]["logo_kind"], "symbol")
         self.assertEqual(rows[0]["aircraft_display"], "A321")
+        self.assertEqual(rows[0]["origin_name"], "Hartsfield Jackson Atlanta International")
+        self.assertEqual(rows[0]["destination_name"], "Charlotte Douglas International")
         self.assertEqual(rows[0]["direction"], "NE")
         self.assertEqual(rows[0]["vertical_direction"], "climbing")
         self.assertLess(rows[0]["distance_miles"], rows[1]["distance_miles"])
         self.assertEqual(rows[1]["aircraft_type"], "B738")
         self.assertEqual(rows[1]["aircraft_display"], "B738")
+        config["show_airport_names"] = False
+        with patch.object(app, "CONFIG", config), patch.object(app, "CACHE", cache), patch.object(app, "PENDING", set()), patch.object(app, "MOTION_HISTORY", {}):
+            rows_without_names = app.process(source)
+        self.assertNotIn("origin_name", rows_without_names[0])
+        self.assertNotIn("destination_name", rows_without_names[0])
+
 
     def test_aircraft_display_name_uses_manufacturer_and_model(self):
         self.assertEqual(app.aircraft_display_name("BOEING", "737-8", "B38M"), "Boeing 737 MAX 8")
@@ -182,6 +216,8 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(app.aircraft_display_name("AIRBUS SAS", "A321-253NY", None), "Airbus A321")
         self.assertEqual(app.aircraft_display_name("IAI LTD", "GULFSTREAM G280", None), "Gulfstream G280")
         self.assertEqual(app.aircraft_display_name("PILATUS AIRCRAFT LTD", "PC-12/47E", "PC12"), "Pilatus PC-12")
+        self.assertEqual(app.aircraft_display_name("Avions de Transport Regional", "ATR 72 212F", "AT73"), "ATR 72")
+        self.assertEqual(app.aircraft_display_name("Avions de Transport Regional", "ATR-42-600", "AT46"), "ATR 42")
         self.assertEqual(app.aircraft_display_name("CIRRUS DESIGN CORP", "SR22", None), "Cirrus SR22")
         self.assertEqual(app.aircraft_display_name("AIRBUS CANADA LP", "BD-500-1A11", "BCS3"), "Airbus A220-300")
         self.assertEqual(app.aircraft_display_name("BOMBARDIER", "BD-500-1A10", None), "Airbus A220-100")
@@ -205,6 +241,10 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(app.aircraft_icon_kind("A1", "C172", "Cessna", "172 Skyhawk"), "single-prop")
         self.assertEqual(app.aircraft_icon_kind("A1", "SR22", "Cirrus", "SR22"), "single-prop")
         self.assertEqual(app.aircraft_icon_kind("A1", "C25A", "Cessna", "Citation CJ2"), "light")
+
+    def test_twin_turboprops_override_generic_piaware_category_icon(self):
+        self.assertEqual(app.aircraft_icon_kind("A2", "AT73", "Avions de Transport Regional", "ATR 72 212F"), "turboprop")
+
 
     def test_radius_excludes_aircraft_without_fresh_position(self):
         config = {
@@ -402,20 +442,44 @@ class SkyAwareDatabaseTests(unittest.TestCase):
         self.assertEqual(info["aircraft_type"], "P28A")
         self.assertEqual(fetch.call_count, 3)
 
+
+    def test_adsbdb_returns_full_airport_names(self):
+        response = {"response": {"flightroute": {
+            "callsign_iata": "DL869",
+            "origin": {
+                "iata_code": "SEA", "name": "Seattle Tacoma International Airport",
+                "latitude": 47.449001, "longitude": -122.308998,
+            },
+            "destination": {
+                "iata_code": "DTW", "name": "Detroit Metropolitan Wayne County Airport",
+                "latitude": 42.212399, "longitude": -83.353401,
+            },
+        }}}
+        with patch.object(app, "fetch_json", return_value=response):
+            info, route_found = app.adsbdb_aircraft_info("a4463e", "DAL869")
+        self.assertTrue(route_found)
+        self.assertEqual(info["origin"], "SEA")
+        self.assertEqual(info["origin_name"], "Seattle Tacoma International")
+        self.assertEqual(info["destination"], "DTW")
+        self.assertEqual(
+            info["destination_name"], "Detroit Metropolitan Wayne County",
+        )
     def test_position_aware_route_selects_active_leg_of_reused_flight_number(self):
         routes = [{
             "callsign": "AAL2683",
             "plausible": True,
             "_airports": [
-                {"iata": "DFW", "icao": "KDFW", "lat": 32.896801, "lon": -97.038002},
-                {"iata": "RDU", "icao": "KRDU", "lat": 35.877602, "lon": -78.787498},
-                {"iata": "DFW", "icao": "KDFW", "lat": 32.896801, "lon": -97.038002},
+                {"iata": "DFW", "icao": "KDFW", "name": "Dallas Fort Worth International Airport", "lat": 32.896801, "lon": -97.038002},
+                {"iata": "RDU", "icao": "KRDU", "name": "Raleigh Durham International Airport", "lat": 35.877602, "lon": -78.787498},
+                {"iata": "DFW", "icao": "KDFW", "name": "Dallas Fort Worth International Airport", "lat": 32.896801, "lon": -97.038002},
             ],
         }]
         with patch.object(app, "post_json", return_value=routes):
             route = app.adsb_im_route_info("AAL2683", 35.027481, -81.905542, 100.1)
         self.assertEqual(route["origin"], "DFW")
         self.assertEqual(route["destination"], "RDU")
+        self.assertEqual(route["origin_name"], "Dallas Fort Worth International")
+        self.assertEqual(route["destination_name"], "Raleigh Durham International")
 
     def test_position_aware_route_rejects_implausible_match(self):
         routes = [{

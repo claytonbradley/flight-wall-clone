@@ -9,6 +9,7 @@ const bundledLogoCodes = new Set(['AAL', 'AAY', 'ABX', 'ASA', 'ASH', 'DAL', 'DLH
 const bundledLogoAliases = {ENY: 'AAL', UCA: 'UAL'};
 const aircraftIconTitles = {
   'single-prop': 'Single-engine propeller aircraft', light: 'Light aircraft', 'small-jet': 'Small jet', airliner: 'Airliner',
+  turboprop: 'Twin-engine turboprop aircraft',
   'heavy-twin': 'Heavy aircraft', 'heavy-four': 'Four-engine heavy aircraft',
   'high-performance': 'High-performance aircraft', helicopter: 'Helicopter',
   balloon: 'Balloon', ground: 'Ground vehicle', unknown: 'Aircraft',
@@ -16,6 +17,7 @@ const aircraftIconTitles = {
 const aircraftIconPaths = {
   // Adapted from PiAware SkyAware's straight-wing Cessna map marker.
   'single-prop': 'M8.51,12.75c-.17,0-2-.27-2.56-.35A.41.41,0,0,1,5.6,12V10.87a.41.41,0,0,1,.32-.4l1.81-.37L7.36,6.64H4.75L.6,6a.41.41,0,0,1-.35-.41V4a.41.41,0,0,1,.38-.41l4.09-.28h2.6v-.4l.25,0-.24-.08c0-.21.1-.76.12-1.06A.9.9,0,0,1,8,.94L8.12.54A.41.41,0,0,1,8.5.25a.4.4,0,0,1,.39.29L9,.95a.91.91,0,0,1,.53.75c0,.33.11,1,.13,1.11v.46h2.57l4.12.28a.41.41,0,0,1,.38.41V5.63A.41.41,0,0,1,16.4,6l-4.1.59H9.64L9.26,10.1l1.81.36a.41.41,0,0,1,.32.4V12a.41.41,0,0,1-.34.41c-.56.08-2.37.35-2.55.35Z',
+  turboprop: 'M29 3h6l3 21 20 8v6l-20-2-2 15 9 7v4l-13-4-13 4v-4l9-7-2-15-20 2v-6l20-8z M16 25h3v20h-3z M10 34h15v3H10z M45 25h3v20h-3z M39 34h15v3H39z',
   light: 'M29 5h6l3 20 20 6v6l-20-1-2 13 9 6v4l-13-3-13 3v-4l9-6-2-13-20 1v-6l20-6z',
   'small-jet': 'M29 4h6l4 22 17 12v5l-18-6-2 13 9 7v4l-13-4-13 4v-4l9-7-2-13-18 6v-5l17-12z',
   airliner: 'M29 3h6l4 22 21 15v6l-22-8-2 13 10 7v4l-14-4-14 4v-4l10-7-2-13-22 8v-6l21-15z',
@@ -50,6 +52,7 @@ function aircraftDisplay(item) {
   const rawModel = model.toUpperCase();
   if (['AIRBUS SAS', 'AIRBUS S.A.S.', 'AIRBUS CANADA LP'].includes(maker.toUpperCase())) maker = 'Airbus';
   if (maker.toUpperCase() === 'PILATUS AIRCRAFT LTD') maker = 'Pilatus';
+  if (maker.toUpperCase() === 'AVIONS DE TRANSPORT REGIONAL') maker = 'ATR';
   if (rawModel.startsWith('GULFSTREAM ')) {
     maker = 'Gulfstream';
     model = model.slice('GULFSTREAM '.length);
@@ -68,6 +71,10 @@ function aircraftDisplay(item) {
     if (family) model = family[1];
   }
   if (maker === 'Pilatus' && /^PC-?12(?:[\/\s-].*)?$/.test(model.toUpperCase())) model = 'PC-12';
+  if (maker === 'ATR') {
+    const atrModel = model.toUpperCase().match(/^ATR[-\s]?(42|72)(?:[-\s].*)?$/);
+    if (atrModel) model = 'ATR ' + atrModel[1];
+  }
   if (maker.toUpperCase().includes('BOEING') && model && !aircraftModelNames[code]) {
     const maxModel = model.toUpperCase().match(/^(?:BOEING\s+)?737-(7|8|9|10)$/);
     const customerCode = model.toUpperCase().match(/\b(717|727|737|747|757|767|777)\s*-?\s*([1-9])[A-Z0-9]{2}(?:\([^)]*\)|\/W)?\b/);
@@ -115,6 +122,13 @@ function routeArrow() {
   svg.append(path);
   box.append(svg);
   return box;
+}
+
+function routeEndpoint(code, name) {
+  const endpoint = el('div', 'route-endpoint');
+  endpoint.append(el('div', 'route-code', code));
+  if (name) endpoint.append(el('div', 'route-name', name));
+  return endpoint;
 }
 
 function el(tag, className, value) {
@@ -179,7 +193,11 @@ function renderRow(item) {
   flight.append(identity);
   const route = el('div', 'route');
   if (item.origin && item.destination) {
-    route.append(el('span', '', item.origin), routeArrow(), el('span', '', item.destination));
+    route.append(
+      routeEndpoint(item.origin, item.origin_name),
+      routeArrow(),
+      routeEndpoint(item.destination, item.destination_name),
+    );
   } else route.append(el('span', 'unknown', '-'));
   const plane = el('div', 'plane');
   plane.append(el('div', 'aircraft-name', aircraftDisplay(item)));
