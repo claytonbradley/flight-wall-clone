@@ -76,6 +76,7 @@ MANUFACTURER_NAMES = {
     "GULFSTREAM": "Gulfstream", "GULFSTREAM AEROSPACE": "Gulfstream",
     "PILATUS": "Pilatus", "PILATUS AIRCRAFT LTD": "Pilatus", "PIPER": "Piper",
     "AVIONS DE TRANSPORT REGIONAL": "ATR",
+    "BRM AERO S R O": "Bristell", "BRM AERO, S.R.O.": "Bristell",
 }
 PIAWARE_CATEGORY_ICONS = {
     "A1": "light", "A2": "small-jet", "A3": "airliner", "A4": "heavy-twin",
@@ -304,6 +305,8 @@ def aircraft_display_name(manufacturer, model, type_code):
             atr_model = re.match(r"^ATR[-\s]?(42|72)(?:[-\s].*)?$", model.upper())
             if atr_model:
                 model = f"ATR {atr_model.group(1)}"
+        if maker == "Bristell" and (type_code == "NG5" or re.fullmatch(r"BRISTELL\s+(?:LSA|NG-?\s*5)", model.upper())):
+            model = "Bristell LSA"
         if maker == "Boeing" and type_code not in AIRCRAFT_MODEL_NAMES:
             # Enrichment databases often expose Boeing customer codes (for example
             # 717 2BD or 737NG 7H4/W). Keep the family/series and discard the suffix.
@@ -329,7 +332,7 @@ def aircraft_icon_kind(category, aircraft_type=None, manufacturer=None, model=No
     propeller_type = re.match(
         r"^(?:C1(?:50|52|62|70|72|75|77|80|82|85)|C20[68]|C210|C337|C208|"
         r"SR2[02]|P28[ART]|PA(?:18|24|28|30|31|32|34|44|46)|DA(?:20|40|42|62)|"
-        r"M20[PT]|PC12|TBM[789]|BE(?:20|33|35|36|55|58|9L))$",
+        r"M20[PT]|PC12|TBM[789]|NG5|BE(?:20|33|35|36|55|58|9L))$",
         type_code,
     )
     turboprop_type = re.match(

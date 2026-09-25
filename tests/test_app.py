@@ -218,6 +218,7 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(app.aircraft_display_name("PILATUS AIRCRAFT LTD", "PC-12/47E", "PC12"), "Pilatus PC-12")
         self.assertEqual(app.aircraft_display_name("Avions de Transport Regional", "ATR 72 212F", "AT73"), "ATR 72")
         self.assertEqual(app.aircraft_display_name("Avions de Transport Regional", "ATR-42-600", "AT46"), "ATR 42")
+        self.assertEqual(app.aircraft_display_name("BRM AERO S R O", "BRISTELL LSA", "NG5"), "Bristell LSA")
         self.assertEqual(app.aircraft_display_name("CIRRUS DESIGN CORP", "SR22", None), "Cirrus SR22")
         self.assertEqual(app.aircraft_display_name("AIRBUS CANADA LP", "BD-500-1A11", "BCS3"), "Airbus A220-300")
         self.assertEqual(app.aircraft_display_name("BOMBARDIER", "BD-500-1A10", None), "Airbus A220-100")
@@ -241,6 +242,7 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(app.aircraft_icon_kind("A1", "C172", "Cessna", "172 Skyhawk"), "single-prop")
         self.assertEqual(app.aircraft_icon_kind("A1", "SR22", "Cirrus", "SR22"), "single-prop")
         self.assertEqual(app.aircraft_icon_kind("A1", "C25A", "Cessna", "Citation CJ2"), "light")
+        self.assertEqual(app.aircraft_icon_kind("A1", "NG5", "BRM AERO S R O", "BRISTELL LSA"), "single-prop")
 
     def test_twin_turboprops_override_generic_piaware_category_icon(self):
         self.assertEqual(app.aircraft_icon_kind("A2", "AT73", "Avions de Transport Regional", "ATR 72 212F"), "turboprop")
@@ -904,6 +906,10 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("PermitRootLogin no", deploy)
         self.assertIn("PubkeyAuthentication yes", deploy)
         self.assertIn("PasswordAuthentication yes", deploy)
+        self.assertIn("INITIAL_KIOSK_PASSWORD_SET=false", deploy)
+        self.assertIn("printf '%s:%s\\n' \"$KIOSK_USER\" 'kiosk' | chpasswd", deploy)
+        self.assertIn("INITIAL_KIOSK_PASSWORD_SET=true", deploy)
+        self.assertNotIn('\n    passwd "$KIOSK_USER"\n', deploy)
         self.assertIn('AllowUsers $KIOSK_USER', deploy)
         self.assertIn("systemctl enable ssh.service", deploy)
         self.assertIn("systemctl restart ssh.service", deploy)

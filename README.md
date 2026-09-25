@@ -42,12 +42,13 @@ The script installs the required Debian packages, validates `config.json`, runs 
 
 ### SSH maintenance access
 
-The first deployment asks you to set a password for the kiosk account, installs and enables OpenSSH, disables direct root login, and restricts SSH login to the kiosk account. The account owns a checkout at `~/flight-wall-clone` and receives no general-purpose sudo permission. It can invoke only two named passwordless wrappers: `flightwall-deploy` and `flightwall-reboot`.
+When the kiosk account does not yet have a password, the first deployment assigns the initial password `kiosk`. Rerunning deployment never overwrites a password that has subsequently been changed. The installer enables OpenSSH, disables direct root login, and restricts SSH login to the kiosk account. The account owns a checkout at `~/flight-wall-clone` and receives no general-purpose sudo permission. It can invoke only two named passwordless wrappers: `flightwall-deploy` and `flightwall-reboot`.
 
 From another computer on the same network:
 
 ```sh
 ssh kiosk@DEVICE_IP
+passwd
 cd ~/flight-wall-clone
 git pull
 deploy

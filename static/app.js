@@ -54,6 +54,7 @@ function aircraftDisplay(item) {
   if (['AIRBUS SAS', 'AIRBUS S.A.S.', 'AIRBUS CANADA LP'].includes(maker.toUpperCase())) maker = 'Airbus';
   if (maker.toUpperCase() === 'PILATUS AIRCRAFT LTD') maker = 'Pilatus';
   if (maker.toUpperCase() === 'AVIONS DE TRANSPORT REGIONAL') maker = 'ATR';
+  if (['BRM AERO S R O', 'BRM AERO, S.R.O.'].includes(maker.toUpperCase())) maker = 'Bristell';
   if (rawModel.startsWith('GULFSTREAM ')) {
     maker = 'Gulfstream';
     model = model.slice('GULFSTREAM '.length);
@@ -75,6 +76,9 @@ function aircraftDisplay(item) {
   if (maker === 'ATR') {
     const atrModel = model.toUpperCase().match(/^ATR[-\s]?(42|72)(?:[-\s].*)?$/);
     if (atrModel) model = 'ATR ' + atrModel[1];
+  }
+  if (maker === 'Bristell' && (code === 'NG5' || /^BRISTELL\s+(?:LSA|NG-?\s*5)$/.test(model.toUpperCase()))) {
+    model = 'Bristell LSA';
   }
   if (maker.toUpperCase().includes('BOEING') && model && !aircraftModelNames[code]) {
     const maxModel = model.toUpperCase().match(/^(?:BOEING\s+)?737-(7|8|9|10)$/);

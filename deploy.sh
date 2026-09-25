@@ -170,11 +170,11 @@ chmod 0644 "$KIOSK_BASHRC"
 
 status "Configuring SSH access for the kiosk account"
 [[ -x /usr/sbin/sshd ]] || die "OpenSSH server is not installed; rerun without --skip-packages"
+INITIAL_KIOSK_PASSWORD_SET=false
 PASSWORD_STATE="$(passwd -S "$KIOSK_USER" | awk '{print $2}')"
 if [[ "$PASSWORD_STATE" == "L" || "$PASSWORD_STATE" == "NP" ]]; then
-    [[ -t 0 ]] || die "the kiosk account needs an SSH password; rerun interactively"
-    printf '\nSet the SSH password for account %s.\n' "$KIOSK_USER"
-    passwd "$KIOSK_USER"
+    printf '%s:%s\n' "$KIOSK_USER" 'kiosk' | chpasswd
+    INITIAL_KIOSK_PASSWORD_SET=true
 fi
 install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
 printf '%s\n' \
@@ -281,6 +281,9 @@ printf '\nDeployment complete. Reboot to verify automatic login and kiosk startu
 printf '  sudo /usr/local/sbin/flightwall-reboot\n\n'
 printf 'Kiosk account: %s\n' "$KIOSK_USER"
 printf 'SSH login: ssh %s@<device-ip>\n' "$KIOSK_USER"
+if [[ "$INITIAL_KIOSK_PASSWORD_SET" == true ]]; then
+    printf 'Initial SSH password: kiosk (change it immediately with passwd)\n'
+fi
 printf 'Kiosk repository: %s\n\n' "$REPO_DIR"
 printf 'Update and deploy:\n'
 printf '  cd %s && git pull\n' "$REPO_DIR"
