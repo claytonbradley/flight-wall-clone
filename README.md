@@ -38,7 +38,25 @@ The script creates a dedicated, non-administrator account named `kiosk` and conf
 sudo bash deploy.sh --kiosk-user YOUR_DESKTOP_USERNAME
 ```
 
-The script installs the required Debian packages, validates `config.json`, runs the unit tests, creates the kiosk account and required device-group memberships, installs the application and systemd services with normalized read permissions, downloads and parses the initial FAA aircraft index, enables its nightly 1:00 AM timer, selects LightDM as Debian's default display manager, configures Openbox and LightDM autologin, starts the backend, and verifies both the display page and receiver API. The kiosk account is not granted `sudo` access. Chromium uses its basic local password store so a passwordless kiosk login does not produce a keyring prompt. The backend restarts after any exit, and the kiosk session relaunches Chromium if the browser closes or crashes. It is safe to run again for application updates. Use `--skip-packages` on later deployments to skip `apt update` and package installation. Reboot after the first deployment to verify unattended kiosk startup.
+The script installs the required Debian packages, validates `config.json`, runs the unit tests, creates the kiosk account and required device-group memberships, installs the application and systemd services with normalized read permissions, downloads and parses the initial FAA aircraft index, enables its nightly 1:00 AM timer, selects LightDM as Debian's default display manager, configures Openbox and LightDM autologin, starts the backend, and verifies both the display page and receiver API. Chromium uses its basic local password store so the kiosk login does not produce a keyring prompt. The backend restarts after any exit, and the kiosk session relaunches Chromium if the browser closes or crashes. It is safe to run again for application updates. Use `--skip-packages` on later deployments to skip `apt update` and package installation. Reboot after the first deployment to verify unattended kiosk startup.
+
+### SSH maintenance access
+
+The first deployment asks you to set a password for the kiosk account, installs and enables OpenSSH, disables direct root login, and restricts SSH login to the kiosk account. The account owns a checkout at `~/flight-wall-clone` and receives no general-purpose sudo permission. It can invoke only two named passwordless wrappers: `flightwall-deploy` and `flightwall-reboot`.
+
+From another computer on the same network:
+
+```sh
+ssh kiosk@DEVICE_IP
+cd ~/flight-wall-clone
+git pull
+deploy
+sudo /usr/local/sbin/flightwall-reboot
+```
+
+The `deploy` alias skips package installation for routine updates. Use `deploy-initial` when packages must be installed or repaired; it runs the same deployment without `--skip-packages`. Both aliases are maintained in the kiosk account's `.bashrc`.
+
+Because `kiosk` can modify the repository and invoke its deployment script as root, control of the kiosk SSH account is effectively administrative access to this appliance. Use a strong unique password and do not expose TCP port 22 directly to the internet. The installer does not alter firewall rules.
 
 If the login screen still appears, collect the effective configuration and current-boot log with:
 
@@ -53,7 +71,7 @@ sudo journalctl -u lightdm -b --no-pager
 
 ```sh
 sudo apt update
-sudo apt install python3 chromium lightdm openbox x11-xserver-utils
+sudo apt install python3 chromium lightdm openbox x11-xserver-utils openssh-server git sudo
 sudo useradd --system --user-group --home-dir /opt/flightwall --shell /usr/sbin/nologin flightwall
 sudo mkdir -p /opt/flightwall
 sudo cp -a app.py config.json static /opt/flightwall/

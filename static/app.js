@@ -3,6 +3,7 @@ const empty = document.getElementById('empty');
 const status = document.getElementById('status');
 const count = document.getElementById('count');
 const distanceScope = document.getElementById('distance-scope');
+const updatedAt = document.getElementById('updated-at');
 const logoNodes = new Map();
 const logoAssetVersion = '20260924-11';
 const bundledLogoCodes = new Set(['AAL', 'AAY', 'ABX', 'ASA', 'ASH', 'DAL', 'DLH', 'EDV', 'FDX', 'FFT', 'GJS', 'IBE', 'JBU', 'JIA', 'PDT', 'RPA', 'SWA', 'TAI', 'UAL', 'UPS']);
@@ -238,6 +239,15 @@ function renderRow(item) {
   return row;
 }
 
+function markUpdated() {
+  const now = new Date();
+  updatedAt.dateTime = now.toISOString();
+  updatedAt.textContent = 'UPDATED ' + now.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+  }).toUpperCase();
+}
+
 async function refresh() {
   try {
     const response = await fetch('/api/aircraft', {cache: 'no-store'});
@@ -256,6 +266,7 @@ async function refresh() {
     empty.hidden = rows.length > 0;
     empty.textContent = data.receiver_ok ? 'Waiting for aircraft from PiAware' : 'Waiting for PiAware connection';
     count.textContent = rows.length + ' AIRCRAFT';
+    markUpdated();
   } catch (_) {
     flights.replaceChildren();
     empty.hidden = false;

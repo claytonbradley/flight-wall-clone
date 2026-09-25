@@ -7,6 +7,7 @@ APP_GROUP="flightwall"
 INSTALL_DIR="/opt/flightwall"
 SERVICE_NAME="flightwall.service"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/claytonbradley/flight-wall-clone.git"
 KIOSK_USER="kiosk"
 SKIP_PACKAGES=false
 
@@ -71,7 +72,7 @@ if [[ "$SKIP_PACKAGES" == false ]]; then
     command -v apt-get >/dev/null 2>&1 || die "this installer requires a Debian-based system with apt"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils
+    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils openssh-server git sudo
 fi
 
 status "Validating configuration and running unit tests"
@@ -123,6 +124,83 @@ KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
 KIOSK_GROUP="$(id -gn "$KIOSK_USER")"
 [[ -n "$KIOSK_HOME" ]] || die "home directory for '$KIOSK_USER' is unavailable"
 install -d -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 "$KIOSK_HOME"
+status "Preparing the kiosk-managed Git checkout"
+REPO_DIR="$KIOSK_HOME/flight-wall-clone"
+if [[ -L "$REPO_DIR" ]]; then
+    die "refusing to use a symbolic link as the kiosk repository: $REPO_DIR"
+fi
+if [[ -e "$REPO_DIR" && ! -d "$REPO_DIR/.git" ]]; then
+    die "$REPO_DIR exists but is not a Git repository"
+fi
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+    runuser -u "$KIOSK_USER" -- git clone "$REPO_URL" "$REPO_DIR"
+fi
+[[ "$(stat -c %U "$REPO_DIR")" == "$KIOSK_USER" ]] || \
+    die "$REPO_DIR must be owned by $KIOSK_USER"
+runuser -u "$KIOSK_USER" -- git -C "$REPO_DIR" remote set-url origin "$REPO_URL"
+
+status "Configuring restricted kiosk administration commands"
+printf '%s\n' \
+    '#!/bin/sh' \
+    "exec /usr/bin/bash '$REPO_DIR/deploy.sh' --kiosk-user '$KIOSK_USER' \"\$@\"" \
+    > /usr/local/sbin/flightwall-deploy
+printf '%s\n' \
+    '#!/bin/sh' \
+    'exec /usr/bin/systemctl reboot' \
+    > /usr/local/sbin/flightwall-reboot
+chmod 0755 /usr/local/sbin/flightwall-deploy /usr/local/sbin/flightwall-reboot
+printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/flightwall-deploy, /usr/local/sbin/flightwall-reboot\n' \
+    "$KIOSK_USER" > /etc/sudoers.d/flightwall-kiosk
+chmod 0440 /etc/sudoers.d/flightwall-kiosk
+visudo -cf /etc/sudoers.d/flightwall-kiosk >/dev/null || die "kiosk sudo configuration is invalid"
+status "Configuring kiosk maintenance aliases"
+KIOSK_BASHRC="$KIOSK_HOME/.bashrc"
+if [[ ! -f "$KIOSK_BASHRC" ]]; then
+    install -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0644 /dev/null "$KIOSK_BASHRC"
+fi
+sed -i '/^# BEGIN LOCAL AIR TRAFFIC ALIASES$/,/^# END LOCAL AIR TRAFFIC ALIASES$/d' "$KIOSK_BASHRC"
+printf '\n%s\n' \
+    '# BEGIN LOCAL AIR TRAFFIC ALIASES' \
+    "alias deploy='sudo /usr/local/sbin/flightwall-deploy --skip-packages'" \
+    "alias deploy-initial='sudo /usr/local/sbin/flightwall-deploy'" \
+    '# END LOCAL AIR TRAFFIC ALIASES' \
+    >> "$KIOSK_BASHRC"
+chown "$KIOSK_USER:$KIOSK_GROUP" "$KIOSK_BASHRC"
+chmod 0644 "$KIOSK_BASHRC"
+
+status "Configuring SSH access for the kiosk account"
+[[ -x /usr/sbin/sshd ]] || die "OpenSSH server is not installed; rerun without --skip-packages"
+PASSWORD_STATE="$(passwd -S "$KIOSK_USER" | awk '{print $2}')"
+if [[ "$PASSWORD_STATE" == "L" || "$PASSWORD_STATE" == "NP" ]]; then
+    [[ -t 0 ]] || die "the kiosk account needs an SSH password; rerun interactively"
+    printf '\nSet the SSH password for account %s.\n' "$KIOSK_USER"
+    passwd "$KIOSK_USER"
+fi
+install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
+printf '%s\n' \
+    '# Managed by Local Air Traffic deploy.sh' \
+    'PermitRootLogin no' \
+    'PubkeyAuthentication yes' \
+    'PasswordAuthentication yes' \
+    'KbdInteractiveAuthentication no' \
+    "AllowUsers $KIOSK_USER" \
+    > /etc/ssh/sshd_config.d/00-local-air-traffic.conf
+chmod 0644 /etc/ssh/sshd_config.d/00-local-air-traffic.conf
+install -d -o root -g root -m 0755 /run/sshd
+ssh-keygen -A
+/usr/sbin/sshd -t || die "OpenSSH configuration validation failed"
+SSHD_EFFECTIVE="$(/usr/sbin/sshd -T)"
+grep -Fqx 'permitrootlogin no' <<<"$SSHD_EFFECTIVE" || die "SSH root-login restriction was not applied"
+grep -Fqx 'pubkeyauthentication yes' <<<"$SSHD_EFFECTIVE" || die "SSH public-key authentication was not enabled"
+grep -Fqx 'passwordauthentication yes' <<<"$SSHD_EFFECTIVE" || die "SSH password authentication was not enabled"
+grep -Fqx "allowusers $KIOSK_USER" <<<"$SSHD_EFFECTIVE" || die "SSH was not restricted to $KIOSK_USER"
+systemctl enable ssh.service
+systemctl restart ssh.service
+systemctl is-enabled --quiet ssh.service || die "SSH service was not enabled at boot"
+systemctl is-active --quiet ssh.service || {
+    journalctl -u ssh.service -n 30 --no-pager >&2
+    die "SSH service did not start"
+}
 install -d -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 "$KIOSK_HOME/.config"
 install -d -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 "$KIOSK_HOME/.config/openbox"
 install -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 \
@@ -200,8 +278,15 @@ for attempt in range(10):
 PY
 
 printf '\nDeployment complete. Reboot to verify automatic login and kiosk startup:\n'
-printf '  sudo reboot\n\n'
+printf '  sudo /usr/local/sbin/flightwall-reboot\n\n'
 printf 'Kiosk account: %s\n' "$KIOSK_USER"
+printf 'SSH login: ssh %s@<device-ip>\n' "$KIOSK_USER"
+printf 'Kiosk repository: %s\n\n' "$REPO_DIR"
+printf 'Update and deploy:\n'
+printf '  cd %s && git pull\n' "$REPO_DIR"
+printf '  deploy\n\n'
+printf 'Full deployment including package installation:\n'
+printf '  deploy-initial\n\n'
 printf 'Default display manager: %s\n\n' "$DISPLAY_MANAGER_UNIT"
 printf 'Service logs:\n'
 printf '  journalctl -u %s -f\n' "$SERVICE_NAME"

@@ -5,3 +5,4 @@
 .aircraft-icon svg{width:72%;height:72%;display:block;fill:currentColor}
 .route{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:start;overflow:visible}.route-endpoint{min-width:0}.route-code{line-height:1.1;overflow:hidden;text-overflow:ellipsis}.route-name{margin-top:.38em;font-size:clamp(9px,.7vw,13px);line-height:1.15;font-weight:600;color:#7893a6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.route .arrow{align-self:start;height:1.1em}
 .secondary,.route-name{font-size:clamp(11px,.9vw,16px);line-height:1.2;font-weight:400;color:#86a1b4;margin-top:.32em;letter-spacing:0}
+#updated-at{position:fixed;right:1vw;bottom:.65vh;z-index:5;color:#526a7b;font-size:clamp(8px,.58vw,11px);font-weight:600;letter-spacing:.1em;line-height:1;white-space:nowrap;opacity:.78;pointer-events:none}

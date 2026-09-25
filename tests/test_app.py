@@ -852,6 +852,18 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("'WITHIN ' + radius.toLocaleString", script)
         self.assertIn("+ ' MILES'", script)
 
+    def test_updated_timestamp_marks_only_successful_data_refreshes(self):
+        html = (app.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        script = (app.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        style = (app.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('<time id="updated-at">UPDATED —</time>', html)
+        self.assertIn("updatedAt.dateTime = now.toISOString()", script)
+        self.assertIn("'UPDATED ' + now.toLocaleString", script)
+        successful_update = script.index("    markUpdated();")
+        self.assertGreater(successful_update, script.index("const data = await response.json();"))
+        self.assertLess(successful_update, script.index("  } catch (_)"))
+        self.assertIn("#updated-at{position:fixed;right:1vw;bottom:.65vh", style)
+
     def test_unattended_kiosk_restarts_backend_and_browser(self):
         service = (app.ROOT / "systemd" / "flightwall.service").read_text(encoding="utf-8")
         autostart = (app.ROOT / "systemd" / "openbox-autostart").read_text(encoding="utf-8")
@@ -882,6 +894,28 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("deployment will continue using the other enrichment sources", deploy)
         self.assertIn('status "Verifying the display page and aircraft API"', deploy)
 
+
+
+    def test_deploy_configures_kiosk_only_ssh_and_maintenance_commands(self):
+        deploy = (app.ROOT / "deploy.sh").read_text(encoding="utf-8")
+        self.assertIn("openssh-server git sudo", deploy)
+        self.assertIn('REPO_DIR="$KIOSK_HOME/flight-wall-clone"', deploy)
+        self.assertIn('runuser -u "$KIOSK_USER" -- git clone', deploy)
+        self.assertIn("PermitRootLogin no", deploy)
+        self.assertIn("PubkeyAuthentication yes", deploy)
+        self.assertIn("PasswordAuthentication yes", deploy)
+        self.assertIn('AllowUsers $KIOSK_USER', deploy)
+        self.assertIn("systemctl enable ssh.service", deploy)
+        self.assertIn("systemctl restart ssh.service", deploy)
+        self.assertIn("/usr/local/sbin/flightwall-deploy", deploy)
+        self.assertIn("/usr/local/sbin/flightwall-reboot", deploy)
+        self.assertIn("/etc/sudoers.d/flightwall-kiosk", deploy)
+        self.assertIn("visudo -cf", deploy)
+        self.assertIn("# BEGIN LOCAL AIR TRAFFIC ALIASES", deploy)
+        self.assertIn("alias deploy='sudo /usr/local/sbin/flightwall-deploy --skip-packages'", deploy)
+        self.assertIn("alias deploy-initial='sudo /usr/local/sbin/flightwall-deploy'", deploy)
+        self.assertIn("sed -i '/^# BEGIN LOCAL AIR TRAFFIC ALIASES$/", deploy)
+        self.assertNotIn("NOPASSWD: ALL", deploy)
 
 if __name__ == "__main__":
     unittest.main()
