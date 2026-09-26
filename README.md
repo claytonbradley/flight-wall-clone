@@ -57,6 +57,8 @@ sudo /usr/local/sbin/flightwall-reboot
 
 The `deploy` alias skips package installation for routine updates. Use `deploy-initial` when packages must be installed or repaired; it runs the same deployment without `--skip-packages`. Both aliases are maintained in the kiosk account's `.bashrc`.
 
+When upgrading an installation created before SSH maintenance support was added, run `sudo bash deploy.sh` once without `--skip-packages`. This installs Git, OpenSSH, and sudo before the kiosk-managed checkout is prepared.
+
 Because `kiosk` can modify the repository and invoke its deployment script as root, control of the kiosk SSH account is effectively administrative access to this appliance. Use a strong unique password and do not expose TCP port 22 directly to the internet. The installer does not alter firewall rules.
 
 If the login screen still appears, collect the effective configuration and current-boot log with:

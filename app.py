@@ -60,7 +60,7 @@ AIRCRAFT_MODEL_NAMES = {
     "B744": "747-400", "B748": "747-8", "B74S": "747SP",
     "B752": "757-200", "B753": "757-300", "B762": "767-200", "B763": "767-300",
     "B764": "767-400", "B772": "777-200", "B773": "777-300", "B77L": "777-200LR",
-    "B77W": "777-300ER", "B788": "787-8", "B789": "787-9", "B78X": "787-10",
+    "B350": "King Air 350", "B77W": "777-300ER", "B788": "787-8", "B789": "787-9", "B78X": "787-10",
     "BCS1": "A220-100", "BCS3": "A220-300",
     "C172": "172 Skyhawk", "C68A": "Citation Latitude", "CL35": "Challenger 350",
     "CRJ2": "CRJ-200", "CRJ7": "CRJ-700", "CRJ9": "CRJ-900",
@@ -75,6 +75,7 @@ MANUFACTURER_NAMES = {
     "DASSAULT": "Dassault", "EMBRAER": "Embraer",
     "GULFSTREAM": "Gulfstream", "GULFSTREAM AEROSPACE": "Gulfstream",
     "PILATUS": "Pilatus", "PILATUS AIRCRAFT LTD": "Pilatus", "PIPER": "Piper",
+    "RAYTHEON AIRCRAFT COMPANY": "Beechcraft",
     "AVIONS DE TRANSPORT REGIONAL": "ATR",
     "BRM AERO S R O": "Bristell", "BRM AERO, S.R.O.": "Bristell",
 }
@@ -266,6 +267,25 @@ def callsign_logo_code(callsign):
     return match.group(1) if match else None
 
 
+def display_identity(row, logo_code=None):
+    callsign = str(row.get("display_callsign") or row.get("callsign") or "").strip().upper()
+    registration = str(row.get("registration") or "").strip().upper()
+    hex_code = str(row.get("hex") or "").strip().upper()
+    airline_or_operator = bool(
+        row.get("airline") or row.get("airline_icao") or row.get("airline_iata") or logo_code
+    )
+    is_us_registration = bool(re.fullmatch(r"N[1-9][0-9]{0,4}[A-Z]{0,2}", registration))
+
+    if is_us_registration and not airline_or_operator:
+        return registration, hex_code
+
+    primary = callsign or registration or hex_code
+    secondary = str(row.get("airline") or registration or hex_code).strip()
+    if secondary.upper() == primary.upper():
+        secondary = hex_code if hex_code != primary.upper() else ""
+    return primary, secondary
+
+
 def aircraft_display_name(manufacturer, model, type_code):
     manufacturer = str(manufacturer or "").strip()
     model = str(model or "").strip()
@@ -276,6 +296,8 @@ def aircraft_display_name(manufacturer, model, type_code):
         inferred = None
         if type_code.startswith("A") and len(type_code) == 4:
             inferred = "Airbus"
+        elif type_code == "B350":
+            inferred = "Beechcraft"
         elif re.match(r"^B(?:3[789]|7)", type_code):
             inferred = "Boeing"
         elif type_code.startswith(("E1", "E4", "E5", "E7", "E9")):
@@ -336,7 +358,7 @@ def aircraft_icon_kind(category, aircraft_type=None, manufacturer=None, model=No
         type_code,
     )
     turboprop_type = re.match(
-        r"^(?:AT4[23567]|AT7[2356]|DH8[ABCD]|DHC6|SF34|JS3[12]|E120|SW4)$",
+        r"^(?:AT4[23567]|AT7[2356]|B350|DH8[ABCD]|DHC6|SF34|JS3[12]|E120|SW4)$",
         type_code,
     )
     if turboprop_type or "ATR " in description:
@@ -878,7 +900,8 @@ def process(source):
     rows.sort(key=lambda x: (x["distance_miles"] is None, x["distance_miles"] if x["distance_miles"] is not None else x["seen"]))
     selected = rows[:CONFIG.get("max_aircraft", 12)]
     for row in selected:
-        key = (row["hex"], row.pop("_lookup_callsign"))
+        transmitted_callsign = row.pop("_lookup_callsign")
+        key = (row["hex"], transmitted_callsign)
         enrichment = cache_get(key)
         enrichment_enabled = CONFIG.get("use_adsbdb", True) or skyaware_database_url(row["hex"])
         if enrichment_enabled and enrichment is None:
@@ -902,9 +925,10 @@ def process(source):
         row["aircraft_icon"] = aircraft_icon_kind(
             row.get("category"), row.get("aircraft_type"), row.get("manufacturer"), row.get("model")
         )
-        logo_code = row.get("airline_icao") or row.get("airline_iata") or callsign_logo_code(row.get("callsign"))
+        logo_code = row.get("airline_icao") or row.get("airline_iata") or callsign_logo_code(transmitted_callsign)
         if logo_code:
             row["logo_code"] = logo_code
+        row["display_callsign"], row["display_secondary"] = display_identity(row, logo_code)
         extension = logo_extension(logo_code)
         if extension:
             row["logo_ext"] = extension

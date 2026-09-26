@@ -40,7 +40,7 @@ const aircraftModelNames = {
   B37M: '737 MAX 7', B38M: '737 MAX 8', B39M: '737 MAX 9', B3XM: '737 MAX 10',
   B741: '747-100', B742: '747-200', B743: '747-300', B744: '747-400', B748: '747-8', B74S: '747SP',
   B752: '757-200', B753: '757-300', B762: '767-200', B763: '767-300', B764: '767-400',
-  B772: '777-200', B773: '777-300', B77L: '777-200LR', B77W: '777-300ER',
+  B350: 'King Air 350', B772: '777-200', B773: '777-300', B77L: '777-200LR', B77W: '777-300ER',
   B788: '787-8', B789: '787-9', B78X: '787-10', BCS1: 'A220-100', BCS3: 'A220-300', C172: '172 Skyhawk', C68A: 'Citation Latitude',
   CL35: 'Challenger 350', CRJ2: 'CRJ-200', CRJ7: 'CRJ-700', CRJ9: 'CRJ-900',
   E145: 'ERJ-145', E45X: 'ERJ-145XR', E170: 'E170', E190: 'E190', E75L: 'E175', E75S: 'E175',
@@ -53,6 +53,7 @@ function aircraftDisplay(item) {
   const rawModel = model.toUpperCase();
   if (['AIRBUS SAS', 'AIRBUS S.A.S.', 'AIRBUS CANADA LP'].includes(maker.toUpperCase())) maker = 'Airbus';
   if (maker.toUpperCase() === 'PILATUS AIRCRAFT LTD') maker = 'Pilatus';
+  if (maker.toUpperCase() === 'RAYTHEON AIRCRAFT COMPANY') maker = 'Beechcraft';
   if (maker.toUpperCase() === 'AVIONS DE TRANSPORT REGIONAL') maker = 'ATR';
   if (['BRM AERO S R O', 'BRM AERO, S.R.O.'].includes(maker.toUpperCase())) maker = 'Bristell';
   if (rawModel.startsWith('GULFSTREAM ')) {
@@ -61,6 +62,7 @@ function aircraftDisplay(item) {
   }
   if (!maker && /^A\d{3}/.test(code)) maker = 'Airbus';
   else if (!maker && /^B(?:3[789]|7)/.test(code)) maker = 'Boeing';
+  else if (!maker && code === 'B350') maker = 'Beechcraft';
   else if (!maker && /^(E1|E4|E5|E7|E9)/.test(code)) maker = 'Embraer';
   else if (!maker && /^(CRJ|CL)/.test(code)) maker = 'Bombardier';
   else if (!maker && /^(C1|C2|C5|C6|C7)/.test(code)) maker = 'Cessna';
@@ -193,8 +195,8 @@ function renderRow(item) {
   const code = item.logo_code || item.airline_icao || item.airline_iata || '';
   flight.append(logoFor(item, code));
   const identity = el('div', 'identity');
-  identity.append(el('div', 'number', item.display_callsign || item.callsign));
-  identity.append(el('div', 'secondary', item.airline || item.registration || item.hex.toUpperCase()));
+  identity.append(el('div', 'number', item.display_callsign || item.callsign || item.registration || item.hex.toUpperCase()));
+  identity.append(el('div', 'secondary', item.display_secondary || item.airline || item.registration || item.hex.toUpperCase()));
   flight.append(identity);
   const route = el('div', 'route');
   if (item.origin && item.destination) {

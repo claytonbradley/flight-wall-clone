@@ -74,6 +74,13 @@ if [[ "$SKIP_PACKAGES" == false ]]; then
     apt-get update
     apt-get install -y python3 chromium lightdm openbox x11-xserver-utils openssh-server git sudo
 fi
+MISSING_DEPENDENCIES=()
+for required_command in /usr/bin/git /usr/sbin/sshd /usr/sbin/visudo; do
+    [[ -x "$required_command" ]] || MISSING_DEPENDENCIES+=("${required_command##*/}")
+done
+if ((${#MISSING_DEPENDENCIES[@]})); then
+    die "missing required deployment command(s): ${MISSING_DEPENDENCIES[*]}; rerun deploy.sh without --skip-packages (or use deploy-initial after setup)"
+fi
 
 status "Validating configuration and running unit tests"
 command -v python3 >/dev/null 2>&1 || die "python3 is not installed"

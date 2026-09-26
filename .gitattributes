@@ -1,0 +1,4 @@
+*.sh text eol=lf
+systemd/openbox-autostart text eol=lf
+systemd/*.service text eol=lf
+systemd/*.timer text eol=lf

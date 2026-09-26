@@ -191,6 +191,8 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(rows[0]["direction"], "NE")
         self.assertEqual(rows[0]["vertical_direction"], "climbing")
         self.assertLess(rows[0]["distance_miles"], rows[1]["distance_miles"])
+        self.assertEqual(rows[1]["display_callsign"], "N123AB")
+        self.assertEqual(rows[1]["display_secondary"], "123456")
         self.assertEqual(rows[1]["aircraft_type"], "B738")
         self.assertEqual(rows[1]["aircraft_display"], "B738")
         config["show_airport_names"] = False
@@ -199,6 +201,45 @@ class AircraftTests(unittest.TestCase):
         self.assertNotIn("origin_name", rows_without_names[0])
         self.assertNotIn("destination_name", rows_without_names[0])
 
+
+    def test_private_aircraft_registration_replaces_hex_as_primary_identity(self):
+        row = {"hex": "a1b2c3", "callsign": "A1B2C3", "registration": "N6112G"}
+        self.assertEqual(app.display_identity(row), ("N6112G", "A1B2C3"))
+
+    def test_hex_like_operator_code_does_not_override_private_registration(self):
+        config = {
+            **app.CONFIG,
+            "receiver_lat": 35.0,
+            "receiver_lon": -82.0,
+            "max_distance_miles": None,
+            "use_adsbdb": False,
+        }
+        source = {"aircraft": [{
+            "hex": "abc123", "seen": 1, "seen_pos": 1,
+            "lat": 35.01, "lon": -82.0,
+        }]}
+        cache = {
+            ("abc123", ""): (
+                {"registration": "N6112G", "aircraft_type": "B350"},
+                app.time.time() + 60,
+            )
+        }
+        with patch.object(app, "CONFIG", config), patch.object(app, "CACHE", cache), \
+                patch.object(app, "PENDING", set()), patch.object(app, "MOTION_HISTORY", {}):
+            row = app.process(source)[0]
+        self.assertEqual(row["display_callsign"], "N6112G")
+        self.assertEqual(row["display_secondary"], "ABC123")
+        self.assertNotIn("logo_code", row)
+
+    def test_operator_callsign_remains_primary_identity(self):
+        row = {
+            "hex": "a1b2c3", "callsign": "EJM285", "display_callsign": "EJM285",
+            "registration": "N285FA", "airline": "Executive Jet Management",
+        }
+        self.assertEqual(
+            app.display_identity(row, "EJM"),
+            ("EJM285", "Executive Jet Management"),
+        )
 
     def test_aircraft_display_name_uses_manufacturer_and_model(self):
         self.assertEqual(app.aircraft_display_name("BOEING", "737-8", "B38M"), "Boeing 737 MAX 8")
@@ -219,6 +260,7 @@ class AircraftTests(unittest.TestCase):
         self.assertEqual(app.aircraft_display_name("Avions de Transport Regional", "ATR 72 212F", "AT73"), "ATR 72")
         self.assertEqual(app.aircraft_display_name("Avions de Transport Regional", "ATR-42-600", "AT46"), "ATR 42")
         self.assertEqual(app.aircraft_display_name("BRM AERO S R O", "BRISTELL LSA", "NG5"), "Bristell LSA")
+        self.assertEqual(app.aircraft_display_name("Raytheon Aircraft Company", "King Air B350", "B350"), "Beechcraft King Air 350")
         self.assertEqual(app.aircraft_display_name("CIRRUS DESIGN CORP", "SR22", None), "Cirrus SR22")
         self.assertEqual(app.aircraft_display_name("AIRBUS CANADA LP", "BD-500-1A11", "BCS3"), "Airbus A220-300")
         self.assertEqual(app.aircraft_display_name("BOMBARDIER", "BD-500-1A10", None), "Airbus A220-100")
@@ -246,6 +288,7 @@ class AircraftTests(unittest.TestCase):
 
     def test_twin_turboprops_override_generic_piaware_category_icon(self):
         self.assertEqual(app.aircraft_icon_kind("A2", "AT73", "Avions de Transport Regional", "ATR 72 212F"), "turboprop")
+        self.assertEqual(app.aircraft_icon_kind("A1", "B350", "Raytheon Aircraft Company", "King Air B350"), "turboprop")
 
 
     def test_radius_excludes_aircraft_without_fresh_position(self):
@@ -740,6 +783,11 @@ class LogoServingTests(unittest.TestCase):
 
 
 class StaticDisplayTests(unittest.TestCase):
+    def test_client_uses_backend_selected_identity_order(self):
+        content = (app.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("item.display_callsign || item.callsign || item.registration", content)
+        self.assertIn("item.display_secondary || item.airline || item.registration", content)
+
     def test_client_contains_no_flightwall_branding(self):
         for name in ("index.html", "app.js", "style.css"):
             with self.subTest(file=name):
@@ -900,7 +948,13 @@ class StaticDisplayTests(unittest.TestCase):
 
     def test_deploy_configures_kiosk_only_ssh_and_maintenance_commands(self):
         deploy = (app.ROOT / "deploy.sh").read_text(encoding="utf-8")
+        self.assertNotIn(b"\r\n", (app.ROOT / "deploy.sh").read_bytes())
+        attributes = (app.ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.sh text eol=lf", attributes)
+        self.assertIn("systemd/openbox-autostart text eol=lf", attributes)
         self.assertIn("openssh-server git sudo", deploy)
+        self.assertIn("MISSING_DEPENDENCIES", deploy)
+        self.assertIn("rerun deploy.sh without --skip-packages", deploy)
         self.assertIn('REPO_DIR="$KIOSK_HOME/flight-wall-clone"', deploy)
         self.assertIn('runuser -u "$KIOSK_USER" -- git clone', deploy)
         self.assertIn("PermitRootLogin no", deploy)
