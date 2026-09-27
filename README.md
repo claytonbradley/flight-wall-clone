@@ -26,6 +26,14 @@ From the extracted project directory on the T630, with a working PiAware URL in 
 
 ### Automated deployment
 
+For a fresh Debian 13 installation, run `flightwall-initial-deploy.sh` after the operating system is installed. It configures persistent Wi-Fi, creates the existing `kiosk` account, clones this repository to `/home/kiosk/flight-wall-clone`, and runs the full deployment:
+
+```sh
+sudo bash flightwall-initial-deploy.sh --wifi-ssid YOUR_SSID --wifi-password YOUR_PASSWORD
+```
+
+The initial kiosk and SSH password is `kiosk`. Change it immediately after the first login. Avoid committing a personalized copy containing Wi-Fi credentials to source control.
+
 Log in with an administrator account, open a terminal in the project folder, and run:
 
 ```sh

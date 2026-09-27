@@ -788,6 +788,12 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("item.display_callsign || item.callsign || item.registration", content)
         self.assertIn("item.display_secondary || item.airline || item.registration", content)
 
+    def test_muted_detail_text_is_fifty_percent_larger(self):
+        content = (app.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+        self.assertIn(
+            ".secondary,.route-name{font-size:clamp(16.5px,1.35vw,24px)", content
+        )
+
     def test_client_contains_no_flightwall_branding(self):
         for name in ("index.html", "app.js", "style.css"):
             with self.subTest(file=name):
@@ -976,6 +982,24 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("alias deploy-initial='sudo /usr/local/sbin/flightwall-deploy'", deploy)
         self.assertIn("sed -i '/^# BEGIN LOCAL AIR TRAFFIC ALIASES$/", deploy)
         self.assertNotIn("NOPASSWD: ALL", deploy)
+
+    def test_initial_deploy_configures_wifi_and_existing_kiosk_account(self):
+        bootstrap_path = app.ROOT / "flightwall-initial-deploy.sh"
+        bootstrap = bootstrap_path.read_text(encoding="utf-8")
+        self.assertNotIn(b"\r\n", bootstrap_path.read_bytes())
+        self.assertIn('WIFI_SSID="${FLIGHTWALL_WIFI_SSID:-}"', bootstrap)
+        self.assertIn('WIFI_PASSWORD="${FLIGHTWALL_WIFI_PASSWORD:-}"', bootstrap)
+        self.assertIn('WIFI_CONNECTION="flightwall-wifi"', bootstrap)
+        self.assertIn('--wifi-ssid SSID --wifi-password PASSWORD', bootstrap)
+        self.assertIn('systemctl enable --now NetworkManager.service', bootstrap)
+        self.assertIn('wifi-sec.psk "$WIFI_PASSWORD"', bootstrap)
+        self.assertIn('nmcli connection modify "$WIFI_CONNECTION"', bootstrap)
+        self.assertIn('connection.autoconnect yes', bootstrap)
+        self.assertIn('KIOSK_USER="kiosk"', bootstrap)
+        self.assertIn('runuser -u "$KIOSK_USER" -- git clone "$REPO_URL" "$REPO_DIR"', bootstrap)
+        self.assertIn('/usr/bin/bash "$REPO_DIR/deploy.sh" --kiosk-user "$KIOSK_USER"', bootstrap)
+        self.assertNotIn('MAINT_USER', bootstrap)
+
 
 if __name__ == "__main__":
     unittest.main()
