@@ -266,6 +266,12 @@ async function refresh() {
     distanceScope.hidden = !hasRadius;
     distanceScope.textContent = hasRadius ? 'WITHIN ' + radius.toLocaleString(undefined, {maximumFractionDigits: 1}) + ' MILES' : '';
     const rows = data.aircraft || [];
+    const maximumAircraft = Number(data.max_aircraft);
+    if (Number.isFinite(maximumAircraft) && maximumAircraft > 0) {
+      flights.style.setProperty('--maximum-aircraft', Math.floor(maximumAircraft));
+    } else {
+      flights.style.removeProperty('--maximum-aircraft');
+    }
     flights.replaceChildren(...rows.map(renderRow));
     const activeAircraft = new Set(rows.map(item => item.hex || item.callsign || item.logo_code || ''));
     for (const key of logoNodes.keys()) if (!activeAircraft.has(key)) logoNodes.delete(key);

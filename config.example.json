@@ -13,6 +13,8 @@
   "use_adsbdb": true,
   "use_hexdb": true,
   "use_adsb_fi": true,
+  "use_adsb_fi_supplement": false,
+  "adsb_fi_radius_nm": 25,
   "use_faa_registry": true,
   "auto_download_logos": true
 }

@@ -6,6 +6,7 @@ APP_USER="flightwall"
 APP_GROUP="flightwall"
 INSTALL_DIR="/opt/flightwall"
 SERVICE_NAME="flightwall.service"
+LEGACY_LIGHTDM_CONFIG="/etc/lightdm/lightdm.conf.d/50-flightwall-kiosk.conf"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/claytonbradley/flight-wall-clone.git"
 KIOSK_USER="kiosk"
@@ -62,7 +63,7 @@ done
 [[ "$KIOSK_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$KIOSK_USER" != "root" ]] || \
     die "invalid kiosk account name: $KIOSK_USER"
 
-for required in app.py update_faa_registry.py config.json static systemd/flightwall.service systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
+for required in app.py update_faa_registry.py resource-monitor.sh config.json static systemd/flightwall.service systemd/flightwall-resource-monitor.service systemd/flightwall-resource-monitor.timer systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
     [[ -e "$SCRIPT_DIR/$required" ]] || die "missing project file: $required"
 done
 cd "$SCRIPT_DIR"
@@ -114,6 +115,7 @@ install -d -o root -g root -m 0755 "$INSTALL_DIR"
 install -d -o "$APP_USER" -g "$APP_GROUP" -m 0755 /var/cache/flightwall
 install -o root -g root -m 0644 "$SCRIPT_DIR/app.py" "$INSTALL_DIR/app.py"
 install -o root -g root -m 0755 "$SCRIPT_DIR/update_faa_registry.py" "$INSTALL_DIR/update_faa_registry.py"
+install -o root -g root -m 0755 "$SCRIPT_DIR/resource-monitor.sh" /usr/local/sbin/flightwall-resource-monitor
 install -o root -g root -m 0644 "$SCRIPT_DIR/config.json" "$INSTALL_DIR/config.json"
 cp -a "$SCRIPT_DIR/static" "$INSTALL_DIR/"
 chown -R root:root "$INSTALL_DIR/static"
@@ -126,6 +128,10 @@ install -o root -g root -m 0644 \
     "$SCRIPT_DIR/systemd/faa-registry-update.service" "/etc/systemd/system/faa-registry-update.service"
 install -o root -g root -m 0644 \
     "$SCRIPT_DIR/systemd/faa-registry-update.timer" "/etc/systemd/system/faa-registry-update.timer"
+install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/systemd/flightwall-resource-monitor.service" "/etc/systemd/system/flightwall-resource-monitor.service"
+install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/systemd/flightwall-resource-monitor.timer" "/etc/systemd/system/flightwall-resource-monitor.timer"
 
 KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
 KIOSK_GROUP="$(id -gn "$KIOSK_USER")"
@@ -214,6 +220,9 @@ install -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 \
     "$SCRIPT_DIR/systemd/openbox-autostart" "$KIOSK_HOME/.config/openbox/autostart"
 
 install -d -o root -g root -m 0755 /etc/lightdm/lightdm.conf.d
+if [[ -f "$LEGACY_LIGHTDM_CONFIG" ]]; then
+    mv -- "$LEGACY_LIGHTDM_CONFIG" "${LEGACY_LIGHTDM_CONFIG}.disabled"
+fi
 printf '%s\n' \
     '[Seat:*]' \
     "autologin-user=$KIOSK_USER" \
@@ -239,6 +248,10 @@ fi
 status "Enabling the nightly FAA update timer"
 systemctl enable --now faa-registry-update.timer
 systemctl reset-failed faa-registry-update.service 2>/dev/null || true
+
+status "Enabling the Flightwall memory monitor"
+systemctl enable --now flightwall-resource-monitor.timer
+systemctl reset-failed flightwall-resource-monitor.service 2>/dev/null || true
 
 status "Starting the Local Air Traffic backend and display manager"
 systemctl enable "$SERVICE_NAME"

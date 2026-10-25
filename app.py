@@ -31,6 +31,7 @@ PENDING = set()
 LOGO_ATTEMPTS = {}
 MOTION_HISTORY = {}
 ADSB_FI_LAST_REQUEST = 0.0
+ADSB_FI_POSITION_MAX_AGE_SECONDS = 15
 POOL = ThreadPoolExecutor(max_workers=2)
 FAA_INDEX = Path(os.environ.get("FLIGHTWALL_FAA_INDEX", ROOT / "faa-aircraft.json"))
 HEX = re.compile(r"^[0-9a-f]{6}$", re.I)
@@ -104,6 +105,15 @@ def validate_config(config):
             or not minimum <= value <= maximum
         ):
             raise ValueError(f"{name} must be a number from {minimum} to {maximum}")
+    supplemental_radius = config.get("adsb_fi_radius_nm", 25)
+    if config.get("use_adsb_fi_supplement", False) and (
+        latitude is None
+        or isinstance(supplemental_radius, bool)
+        or not isinstance(supplemental_radius, (int, float))
+        or not math.isfinite(supplemental_radius)
+        or not 1 <= supplemental_radius <= 250
+    ):
+        raise ValueError("adsb_fi_radius_nm must be a number from 1 to 250 and receiver coordinates must be set")
 
 
 def fetch_json(url, timeout=5):
@@ -453,16 +463,20 @@ def hexdb_aircraft_info(hex_code):
     return info
 
 
-def adsb_fi_aircraft_info(hex_code):
+def fetch_adsb_fi_json(url, timeout=5):
     global ADSB_FI_LAST_REQUEST
     with ADSB_FI_LOCK:
         delay = 1.05 - (time.monotonic() - ADSB_FI_LAST_REQUEST)
         if delay > 0:
             time.sleep(delay)
         try:
-            response = fetch_json(f"https://opendata.adsb.fi/api/v2/hex/{hex_code}", timeout=5)
+            return fetch_json(url, timeout=timeout)
         finally:
             ADSB_FI_LAST_REQUEST = time.monotonic()
+
+
+def adsb_fi_aircraft_info(hex_code):
+    response = fetch_adsb_fi_json(f"https://opendata.adsb.fi/api/v2/hex/{hex_code}")
     aircraft = response.get("ac") if isinstance(response, dict) else None
     if not isinstance(aircraft, list) or not aircraft or not isinstance(aircraft[0], dict):
         return {}
@@ -472,6 +486,39 @@ def adsb_fi_aircraft_info(hex_code):
         "aircraft_type": record.get("t"),
         "model": record.get("desc"),
     }
+
+
+def adsb_fi_supplemental_source():
+    latitude = CONFIG.get("receiver_lat")
+    longitude = CONFIG.get("receiver_lon")
+    radius_nm = CONFIG.get("adsb_fi_radius_nm", 25)
+    url = f"https://opendata.adsb.fi/api/v3/lat/{latitude}/lon/{longitude}/dist/{radius_nm}"
+    response = fetch_adsb_fi_json(url)
+    if not isinstance(response, dict) or not isinstance(response.get("ac"), list):
+        raise ValueError("Invalid adsb.fi aircraft response")
+    generated = response.get("now")
+    if not isinstance(generated, (int, float)):
+        raise ValueError("adsb.fi response lacks a valid 'now' field")
+    if generated > 100_000_000_000:
+        generated /= 1000
+    if abs(time.time() - generated) > ADSB_FI_POSITION_MAX_AGE_SECONDS:
+        raise ValueError("adsb.fi aircraft response is stale")
+    aircraft = []
+    for record in response["ac"]:
+        if not isinstance(record, dict):
+            continue
+        seen = record.get("seen")
+        seen_pos = record.get("seen_pos")
+        if (
+            isinstance(seen, (int, float))
+            and seen <= ADSB_FI_POSITION_MAX_AGE_SECONDS
+            and isinstance(seen_pos, (int, float))
+            and seen_pos <= ADSB_FI_POSITION_MAX_AGE_SECONDS
+            and isinstance(record.get("lat"), (int, float))
+            and isinstance(record.get("lon"), (int, float))
+        ):
+            aircraft.append(record)
+    return {"now": generated, "aircraft": aircraft}
 
 
 def faa_aircraft_info(hex_code):
@@ -852,6 +899,15 @@ def correct_reversed_route(row):
             row.pop(field, None)
 
 
+def is_ground_target(record):
+    if record.get("on_ground") is True or record.get("ground") is True:
+        return True
+    if any(str(record.get(field, "")).strip().lower() == "ground" for field in ("alt_baro", "alt_geom")):
+        return True
+    category = str(record.get("category") or "").strip().upper()
+    return category.startswith("C") and category in PIAWARE_CATEGORY_ICONS
+
+
 def process(source):
     entries = source.get("aircraft", [])
     if not isinstance(entries, list):
@@ -863,6 +919,8 @@ def process(source):
         sample_time = time.time()
     for raw in entries:
         if not isinstance(raw, dict):
+            continue
+        if is_ground_target(raw):
             continue
         hex_code = str(raw.get("hex", "")).lower()
         if not HEX.fullmatch(hex_code):
@@ -942,6 +1000,37 @@ def process(source):
     return selected
 
 
+def merge_aircraft_sources(local_source, supplemental_source):
+    supplemental_entries = supplemental_source.get("aircraft", []) if supplemental_source else []
+    local_entries = local_source.get("aircraft", [])
+    merged = {}
+    for raw in supplemental_entries:
+        if not isinstance(raw, dict):
+            continue
+        hex_code = str(raw.get("hex", "")).lower()
+        if HEX.fullmatch(hex_code):
+            merged[hex_code] = dict(raw)
+    for raw in local_entries:
+        if not isinstance(raw, dict):
+            continue
+        hex_code = str(raw.get("hex", "")).lower()
+        if not HEX.fullmatch(hex_code):
+            continue
+        if hex_code not in merged:
+            merged[hex_code] = raw
+            continue
+        local_record = dict(raw)
+        local_seen = local_record.get("seen")
+        if not isinstance(local_seen, (int, float)) or local_seen > CONFIG.get("max_seen_seconds", 45):
+            continue
+        position_age = local_record.get("seen_pos")
+        if not isinstance(position_age, (int, float)) or position_age > CONFIG.get("max_position_age_seconds", 90):
+            for field in ("lat", "lon", "seen_pos"):
+                local_record.pop(field, None)
+        merged[hex_code].update(local_record)
+    return {"now": local_source.get("now"), "aircraft": list(merged.values())}
+
+
 def poll():
     while True:
         try:
@@ -949,6 +1038,11 @@ def poll():
             generated = source.get("now")
             if not isinstance(generated, (float, int)) or abs(time.time() - generated) > 120:
                 raise ValueError("Receiver data is stale or lacks a valid 'now' field")
+            if CONFIG.get("use_adsb_fi_supplement", False):
+                try:
+                    source = merge_aircraft_sources(source, adsb_fi_supplemental_source())
+                except (HTTPError, URLError, TimeoutError, ValueError, OSError, KeyError) as exc:
+                    LOG.warning("adsb.fi supplemental feed unavailable: %s", exc)
             aircraft = process(source)
             with LOCK:
                 STATE.update(aircraft=aircraft, receiver_ok=True, updated=generated, error=None)
@@ -965,6 +1059,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/aircraft":
             with LOCK:
                 snapshot = dict(STATE)
+            snapshot["max_aircraft"] = CONFIG.get("max_aircraft", 12)
             snapshot["max_distance_miles"] = CONFIG.get("max_distance_miles")
             payload = json.dumps(snapshot).encode()
             return self.send_bytes(payload, "application/json; charset=utf-8", "no-store")

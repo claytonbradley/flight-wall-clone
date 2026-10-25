@@ -1,0 +1,14 @@
+[Unit]
+Description=Check Flightwall processes for sustained memory growth
+After=flightwall.service lightdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/flightwall-resource-monitor
+CacheDirectory=flightwall
+CacheDirectoryMode=0755
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+

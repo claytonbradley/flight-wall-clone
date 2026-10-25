@@ -88,8 +88,85 @@ class ConfigTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     app.validate_config(config)
 
+    def test_adsb_fi_supplement_requires_location_and_valid_radius(self):
+        invalid = (
+            {"receiver_lat": None, "receiver_lon": None, "adsb_fi_radius_nm": 25},
+            {"receiver_lat": 35.0, "receiver_lon": -82.0, "adsb_fi_radius_nm": 0},
+            {"receiver_lat": 35.0, "receiver_lon": -82.0, "adsb_fi_radius_nm": 251},
+            {"receiver_lat": 35.0, "receiver_lon": -82.0, "adsb_fi_radius_nm": True},
+        )
+        for values in invalid:
+            with self.subTest(values=values):
+                config = copy.deepcopy(app.CONFIG)
+                config.update(values, use_adsb_fi_supplement=True)
+                with self.assertRaisesRegex(ValueError, "adsb_fi_radius_nm"):
+                    app.validate_config(config)
+
 
 class AircraftTests(unittest.TestCase):
+    def test_process_excludes_aircraft_and_vehicles_on_the_ground(self):
+        config = {
+            **app.CONFIG,
+            "receiver_lat": 35.0,
+            "receiver_lon": -82.0,
+            "max_distance_miles": None,
+            "use_adsbdb": False,
+        }
+        source = {"aircraft": [
+            {"hex": "abc001", "seen": 1, "seen_pos": 1, "lat": 35.01, "lon": -82.0, "alt_baro": "ground"},
+            {"hex": "abc002", "seen": 1, "seen_pos": 1, "lat": 35.02, "lon": -82.0, "alt_geom": "ground"},
+            {"hex": "abc003", "seen": 1, "seen_pos": 1, "lat": 35.03, "lon": -82.0, "on_ground": True},
+            {"hex": "abc004", "seen": 1, "seen_pos": 1, "lat": 35.04, "lon": -82.0, "category": "C1"},
+            {"hex": "abc005", "seen": 1, "seen_pos": 1, "lat": 35.05, "lon": -82.0, "alt_baro": 1200},
+        ]}
+        with patch.object(app, "CONFIG", config), patch.object(app, "CACHE", {}), patch.object(app, "PENDING", set()), patch.object(app, "MOTION_HISTORY", {}):
+            rows = app.process(source)
+        self.assertEqual([row["hex"] for row in rows], ["abc005"])
+
+    def test_adsb_fi_supplement_rejects_stale_response_and_positions(self):
+        now = 1_790_000_000.0
+        response = {
+            "now": now * 1000,
+            "ac": [
+                {"hex": "abc123", "lat": 35.1, "lon": -82.1, "seen": 1, "seen_pos": 2},
+                {"hex": "def456", "lat": 35.2, "lon": -82.2, "seen": 1, "seen_pos": 16},
+            ],
+        }
+        config = {**app.CONFIG, "receiver_lat": 35.0, "receiver_lon": -82.0, "adsb_fi_radius_nm": 25}
+        with patch.object(app, "CONFIG", config), patch.object(app, "fetch_adsb_fi_json", return_value=response), patch.object(app.time, "time", return_value=now):
+            source = app.adsb_fi_supplemental_source()
+        self.assertEqual([record["hex"] for record in source["aircraft"]], ["abc123"])
+
+        response["now"] = (now - 16) * 1000
+        with patch.object(app, "CONFIG", config), patch.object(app, "fetch_adsb_fi_json", return_value=response), patch.object(app.time, "time", return_value=now):
+            with self.assertRaisesRegex(ValueError, "stale"):
+                app.adsb_fi_supplemental_source()
+
+    def test_merge_prefers_fresh_local_fields_and_fills_missing_position(self):
+        supplemental = {"now": 1000, "aircraft": [{
+            "hex": "abc123", "flight": "WEB123", "lat": 35.1, "lon": -82.1,
+            "seen": 2, "seen_pos": 2, "alt_baro": 9000,
+        }]}
+        local = {"now": 1001, "aircraft": [{
+            "hex": "abc123", "flight": "LOCAL1", "seen": 1, "seen_pos": 100,
+        }]}
+        with patch.object(app, "CONFIG", {**app.CONFIG, "max_position_age_seconds": 90}):
+            record = app.merge_aircraft_sources(local, supplemental)["aircraft"][0]
+        self.assertEqual(record["flight"], "LOCAL1")
+        self.assertEqual((record["lat"], record["lon"], record["seen_pos"]), (35.1, -82.1, 2))
+
+        local["aircraft"][0].update(lat=35.01, lon=-82.01, seen_pos=1)
+        with patch.object(app, "CONFIG", {**app.CONFIG, "max_position_age_seconds": 90}):
+            record = app.merge_aircraft_sources(local, supplemental)["aircraft"][0]
+        self.assertEqual((record["lat"], record["lon"], record["seen_pos"]), (35.01, -82.01, 1))
+
+    def test_merge_uses_supplement_when_matching_local_record_is_stale(self):
+        supplemental_record = {"hex": "abc123", "lat": 35.1, "lon": -82.1, "seen": 2, "seen_pos": 2}
+        supplemental = {"now": 1000, "aircraft": [supplemental_record]}
+        local = {"now": 1001, "aircraft": [{"hex": "abc123", "seen": 46, "seen_pos": 46}]}
+        with patch.object(app, "CONFIG", {**app.CONFIG, "max_seen_seconds": 45}):
+            record = app.merge_aircraft_sources(local, supplemental)["aircraft"][0]
+        self.assertEqual(record, supplemental_record)
     def test_distance_miles(self):
         self.assertEqual(app.distance_miles(35.0, -82.0, 35.0, -82.0), 0)
         self.assertAlmostEqual(app.distance_miles(35.0, -82.0, 35.1, -82.0), 6.91, places=1)
@@ -709,7 +786,12 @@ class LogoSelectionTests(unittest.TestCase):
                 self.assertEqual(source["source_title"], "File:Example Air symbol.svg")
                 self.assertEqual(source["asset_kind"], "symbol")
                 self.assertTrue(app.cache_airline_logo("ZZZ", "Example Air"))
-                fetch_json.assert_called_once()
+                wikimedia_calls = [
+                    call
+                    for call in fetch_json.call_args_list
+                    if call.args[0].startswith("https://commons.wikimedia.org/")
+                ]
+                self.assertEqual(len(wikimedia_calls), 1)
                 fetch_png.assert_called_once()
 
     def test_auto_download_can_be_disabled(self):
@@ -768,7 +850,9 @@ class LogoServingTests(unittest.TestCase):
                     self.assertIn(b"LOCAL AIR TRAFFIC", response.read())
                 with patch.dict(app.CONFIG, {"max_distance_miles": 50}):
                     with urlopen(f"http://127.0.0.1:{server.server_port}/api/aircraft", timeout=5) as response:
-                        self.assertEqual(json.load(response)["max_distance_miles"], 50)
+                        payload = json.load(response)
+                        self.assertEqual(payload["max_distance_miles"], 50)
+                        self.assertEqual(payload["max_aircraft"], app.CONFIG["max_aircraft"])
                 with urlopen(f"http://127.0.0.1:{server.server_port}/logos/ZZZ.png", timeout=5) as response:
                     self.assertEqual(response.status, 200)
                     self.assertEqual(response.headers.get_content_type(), "image/png")
@@ -783,6 +867,24 @@ class LogoServingTests(unittest.TestCase):
 
 
 class StaticDisplayTests(unittest.TestCase):
+    def test_kiosk_hides_mouse_cursor(self):
+        style = (app.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+        self.assertIn("html,body,body *{cursor:none!important}", style)
+
+    def test_adsb_fi_attribution_is_bottom_left_and_half_muted_text_size(self):
+        page = (app.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        style = (app.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('Some results may come from <a href="https://adsb.fi/">adsb.fi</a>', page)
+        self.assertIn("#data-attribution{position:fixed;left:1vw;bottom:.65vh", style)
+        self.assertIn("font-size:clamp(8.25px,.675vw,12px)", style)
+
+    def test_aircraft_rows_keep_maximum_capacity_height_and_start_at_top(self):
+        script = (app.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        style = (app.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+        self.assertIn("const maximumAircraft = Number(data.max_aircraft)", script)
+        self.assertIn("flights.style.setProperty('--maximum-aircraft'", script)
+        self.assertIn(".row{flex:0 0 calc(100% / var(--maximum-aircraft,12))", style)
+
     def test_client_uses_backend_selected_identity_order(self):
         content = (app.ROOT / "static" / "app.js").read_text(encoding="utf-8")
         self.assertIn("item.display_callsign || item.callsign || item.registration", content)
@@ -937,6 +1039,8 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("/etc/X11/default-display-manager", deploy)
         self.assertIn("systemctl enable --force lightdm.service", deploy)
         self.assertIn("systemctl set-default graphical.target", deploy)
+        self.assertIn('LEGACY_LIGHTDM_CONFIG="/etc/lightdm/lightdm.conf.d/50-flightwall-kiosk.conf"', deploy)
+        self.assertIn('mv -- "$LEGACY_LIGHTDM_CONFIG" "${LEGACY_LIGHTDM_CONFIG}.disabled"', deploy)
         self.assertIn('find "$INSTALL_DIR/static" -type f -exec chmod 0644', deploy)
         self.assertIn('if payload.get("error"):', deploy)
         timer = (app.ROOT / "systemd" / "faa-registry-update.timer").read_text(encoding="utf-8")
@@ -949,6 +1053,26 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn('runuser -u "$APP_USER" -- /usr/bin/python3', deploy)
         self.assertIn("deployment will continue using the other enrichment sources", deploy)
         self.assertIn('status "Verifying the display page and aircraft API"', deploy)
+
+    def test_resource_monitor_checks_for_sustained_growth_without_rebooting(self):
+        monitor = (app.ROOT / "resource-monitor.sh").read_text(encoding="utf-8")
+        service = (app.ROOT / "systemd" / "flightwall-resource-monitor.service").read_text(encoding="utf-8")
+        timer = (app.ROOT / "systemd" / "flightwall-resource-monitor.timer").read_text(encoding="utf-8")
+        deploy = (app.ROOT / "deploy.sh").read_text(encoding="utf-8")
+
+        self.assertNotIn(b"\r\n", (app.ROOT / "resource-monitor.sh").read_bytes())
+        self.assertIn("process_pss_kb", monitor)
+        self.assertIn("MINIMUM_SAMPLES", monitor)
+        self.assertIn("CHROMIUM_GROWTH_KB", monitor)
+        self.assertIn("BACKEND_GROWTH_KB", monitor)
+        self.assertIn("systemctl restart \"$unit_name\"", monitor)
+        self.assertNotIn("systemctl reboot", monitor)
+        self.assertIn('mkdir -p -- "$(dirname -- "$STATE_FILE")"', monitor)
+        self.assertNotIn('install -d -m 0755 "$(dirname -- "$STATE_FILE")"', monitor)
+        self.assertIn("ExecStart=/usr/local/sbin/flightwall-resource-monitor", service)
+        self.assertIn("OnUnitActiveSec=5min", timer)
+        self.assertIn("OnBootSec=10min", timer)
+        self.assertIn("systemctl enable --now flightwall-resource-monitor.timer", deploy)
 
 
 
