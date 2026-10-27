@@ -283,6 +283,10 @@ class AircraftTests(unittest.TestCase):
         row = {"hex": "a1b2c3", "callsign": "A1B2C3", "registration": "N6112G"}
         self.assertEqual(app.display_identity(row), ("N6112G", "A1B2C3"))
 
+    def test_private_aircraft_registration_replaces_unverified_operator_callsign(self):
+        row = {"hex": "a96fe9", "callsign": "AXO707", "registration": "N707PW"}
+        self.assertEqual(app.display_identity(row), ("N707PW", "AXO707"))
+
     def test_hex_like_operator_code_does_not_override_private_registration(self):
         config = {
             **app.CONFIG,
@@ -314,7 +318,7 @@ class AircraftTests(unittest.TestCase):
             "registration": "N285FA", "airline": "Executive Jet Management",
         }
         self.assertEqual(
-            app.display_identity(row, "EJM"),
+            app.display_identity(row),
             ("EJM285", "Executive Jet Management"),
         )
 

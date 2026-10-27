@@ -277,17 +277,18 @@ def callsign_logo_code(callsign):
     return match.group(1) if match else None
 
 
-def display_identity(row, logo_code=None):
+def display_identity(row):
     callsign = str(row.get("display_callsign") or row.get("callsign") or "").strip().upper()
     registration = str(row.get("registration") or "").strip().upper()
     hex_code = str(row.get("hex") or "").strip().upper()
     airline_or_operator = bool(
-        row.get("airline") or row.get("airline_icao") or row.get("airline_iata") or logo_code
+        row.get("airline") or row.get("airline_icao") or row.get("airline_iata")
     )
     is_us_registration = bool(re.fullmatch(r"N[1-9][0-9]{0,4}[A-Z]{0,2}", registration))
 
     if is_us_registration and not airline_or_operator:
-        return registration, hex_code
+        secondary = callsign if callsign and callsign != registration else hex_code
+        return registration, secondary
 
     primary = callsign or registration or hex_code
     secondary = str(row.get("airline") or registration or hex_code).strip()
@@ -986,7 +987,7 @@ def process(source):
         logo_code = row.get("airline_icao") or row.get("airline_iata") or callsign_logo_code(transmitted_callsign)
         if logo_code:
             row["logo_code"] = logo_code
-        row["display_callsign"], row["display_secondary"] = display_identity(row, logo_code)
+        row["display_callsign"], row["display_secondary"] = display_identity(row)
         extension = logo_extension(logo_code)
         if extension:
             row["logo_ext"] = extension
