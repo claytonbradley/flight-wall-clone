@@ -2,6 +2,7 @@
 xset s off
 xset -dpms
 xset s noblank
+unclutter --timeout 1 --start-hidden &
 (
   while true; do
     chromium --kiosk --no-first-run --noerrdialogs --password-store=basic --disable-session-crashed-bubble http://127.0.0.1:8765

@@ -73,10 +73,10 @@ if [[ "$SKIP_PACKAGES" == false ]]; then
     command -v apt-get >/dev/null 2>&1 || die "this installer requires a Debian-based system with apt"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils openssh-server git sudo
+    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils unclutter-xfixes openssh-server git sudo
 fi
 MISSING_DEPENDENCIES=()
-for required_command in /usr/bin/git /usr/sbin/sshd /usr/sbin/visudo; do
+for required_command in /usr/bin/git /usr/bin/unclutter /usr/sbin/sshd /usr/sbin/visudo; do
     [[ -x "$required_command" ]] || MISSING_DEPENDENCIES+=("${required_command##*/}")
 done
 if ((${#MISSING_DEPENDENCIES[@]})); then
