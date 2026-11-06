@@ -1089,7 +1089,7 @@ class StaticDisplayTests(unittest.TestCase):
         attributes = (app.ROOT / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("*.sh text eol=lf", attributes)
         self.assertIn("systemd/openbox-autostart text eol=lf", attributes)
-        self.assertIn("openssh-server git sudo", deploy)
+        self.assertIn("openssh-server fwupd git sudo", deploy)
         self.assertIn("MISSING_DEPENDENCIES", deploy)
         self.assertIn("rerun deploy.sh without --skip-packages", deploy)
         self.assertIn('REPO_DIR="$KIOSK_HOME/flight-wall-clone"', deploy)
@@ -1111,6 +1111,14 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("# BEGIN LOCAL AIR TRAFFIC ALIASES", deploy)
         self.assertIn("alias deploy='sudo /usr/local/sbin/flightwall-deploy --skip-packages'", deploy)
         self.assertIn("alias deploy-initial='sudo /usr/local/sbin/flightwall-deploy'", deploy)
+
+    def test_system_upgrade_uses_apt_and_fwupd_without_bypassing_safety_checks(self):
+        deploy = (app.ROOT / "deploy.sh").read_text(encoding="utf-8")
+        self.assertIn("--upgrade-system", deploy)
+        self.assertIn("apt-get full-upgrade -y", deploy)
+        self.assertIn("fwupdmgr refresh --force", deploy)
+        self.assertIn("fwupdmgr update --assume-yes --no-reboot-check", deploy)
+        self.assertNotIn("--no-safety-check", deploy)
         self.assertIn("sed -i '/^# BEGIN LOCAL AIR TRAFFIC ALIASES$/", deploy)
         self.assertNotIn("NOPASSWD: ALL", deploy)
 

@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/claytonbradley/flight-wall-clone.git"
 KIOSK_USER="kiosk"
 SKIP_PACKAGES=false
+UPGRADE_SYSTEM=false
 
 usage() {
     cat <<'EOF'
@@ -20,6 +21,7 @@ Options:
   --kiosk-user USER  Dedicated account that will run Chromium. The account is
                      created if needed. Defaults to "kiosk".
   --skip-packages    Do not run apt update/install.
+  --upgrade-system   Upgrade all Debian packages and supported device firmware.
   -h, --help         Show this help.
 EOF
 }
@@ -48,6 +50,10 @@ while (($#)); do
             SKIP_PACKAGES=true
             shift
             ;;
+        --upgrade-system)
+            UPGRADE_SYSTEM=true
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -62,6 +68,8 @@ done
 [[ ${EUID} -eq 0 ]] || die "run this script with sudo"
 [[ "$KIOSK_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$KIOSK_USER" != "root" ]] || \
     die "invalid kiosk account name: $KIOSK_USER"
+[[ "$UPGRADE_SYSTEM" == false || "$SKIP_PACKAGES" == false ]] || \
+    die "--upgrade-system cannot be combined with --skip-packages"
 
 for required in app.py update_faa_registry.py resource-monitor.sh config.json static systemd/flightwall.service systemd/flightwall-resource-monitor.service systemd/flightwall-resource-monitor.timer systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
     [[ -e "$SCRIPT_DIR/$required" ]] || die "missing project file: $required"
@@ -73,7 +81,11 @@ if [[ "$SKIP_PACKAGES" == false ]]; then
     command -v apt-get >/dev/null 2>&1 || die "this installer requires a Debian-based system with apt"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils unclutter-xfixes openssh-server git sudo
+    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils unclutter-xfixes openssh-server fwupd git sudo
+    if [[ "$UPGRADE_SYSTEM" == true ]]; then
+        status "Upgrading all Debian packages"
+        apt-get full-upgrade -y
+    fi
 fi
 MISSING_DEPENDENCIES=()
 for required_command in /usr/bin/git /usr/bin/unclutter /usr/sbin/sshd /usr/sbin/visudo; do
@@ -81,6 +93,13 @@ for required_command in /usr/bin/git /usr/bin/unclutter /usr/sbin/sshd /usr/sbin
 done
 if ((${#MISSING_DEPENDENCIES[@]})); then
     die "missing required deployment command(s): ${MISSING_DEPENDENCIES[*]}; rerun deploy.sh without --skip-packages (or use deploy-initial after setup)"
+fi
+
+if [[ "$UPGRADE_SYSTEM" == true ]]; then
+    status "Updating supported device firmware"
+    command -v fwupdmgr >/dev/null 2>&1 || die "fwupdmgr is not installed"
+    fwupdmgr refresh --force
+    fwupdmgr update --assume-yes --no-reboot-check
 fi
 
 status "Validating configuration and running unit tests"
