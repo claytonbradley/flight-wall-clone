@@ -1035,7 +1035,7 @@ class StaticDisplayTests(unittest.TestCase):
         self.assertIn("while true; do", autostart)
         self.assertIn("chromium --kiosk", autostart)
         self.assertIn("--password-store=basic", autostart)
-        self.assertIn("unclutter --timeout 1 --start-hidden &", autostart)
+        self.assertIn("unclutter --timeout 1 --jitter 32767 --start-hidden &", autostart)
         self.assertIn("unclutter-xfixes", deploy)
         self.assertIn("/usr/bin/unclutter", deploy)
         self.assertIn("autologin-user=$KIOSK_USER", deploy)
