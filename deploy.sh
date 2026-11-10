@@ -294,7 +294,8 @@ systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 systemctl enable --force lightdm.service
 systemctl set-default graphical.target
-systemctl enable --now "flightwall-hide-cursor@$KIOSK_USER.service"
+systemctl enable "flightwall-hide-cursor@$KIOSK_USER.service"
+systemctl restart "flightwall-hide-cursor@$KIOSK_USER.service"
 
 LIGHTDM_UNIT="$(systemctl show lightdm.service --property=FragmentPath --value)"
 DISPLAY_MANAGER_UNIT="$(readlink -f /etc/systemd/system/display-manager.service || true)"
