@@ -2,10 +2,6 @@
 xset s off
 xset -dpms
 xset s noblank
-# Never allow a distribution Xsession launcher or a repeated Openbox startup
-# to leave multiple cursor managers competing for the display.
-pkill -u "$(id -u)" -f '^(/usr/bin/)?unclutter([[:space:]]|$)' 2>/dev/null || true
-unclutter --timeout 1 --jitter 32767 --start-hidden &
 (
   while true; do
     chromium --kiosk --no-first-run --noerrdialogs --password-store=basic --disable-session-crashed-bubble http://127.0.0.1:8765

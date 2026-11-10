@@ -72,7 +72,7 @@ done
 [[ "$UPGRADE_SYSTEM" == false || "$SKIP_PACKAGES" == false ]] || \
     die "--upgrade-system cannot be combined with --skip-packages"
 
-for required in app.py update_faa_registry.py resource-monitor.sh config.json static systemd/flightwall.service systemd/flightwall-resource-monitor.service systemd/flightwall-resource-monitor.timer systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
+for required in app.py update_faa_registry.py resource-monitor.sh hide-cursor.py config.json static systemd/flightwall.service systemd/flightwall-hide-cursor@.service systemd/flightwall-resource-monitor.service systemd/flightwall-resource-monitor.timer systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
     [[ -e "$SCRIPT_DIR/$required" ]] || die "missing project file: $required"
 done
 cd "$SCRIPT_DIR"
@@ -82,14 +82,14 @@ if [[ "$SKIP_PACKAGES" == false ]]; then
     command -v apt-get >/dev/null 2>&1 || die "this installer requires a Debian-based system with apt"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils unclutter-xfixes openssh-server fwupd git sudo
+    apt-get install -y python3 chromium lightdm openbox x11-xserver-utils libxfixes3 openssh-server fwupd git sudo
     if [[ "$UPGRADE_SYSTEM" == true ]]; then
         status "Upgrading all Debian packages"
         apt-get full-upgrade -y
     fi
 fi
 MISSING_DEPENDENCIES=()
-for required_command in /usr/bin/git /usr/bin/unclutter /usr/sbin/sshd /usr/sbin/visudo; do
+for required_command in /usr/bin/git /usr/sbin/sshd /usr/sbin/visudo; do
     [[ -x "$required_command" ]] || MISSING_DEPENDENCIES+=("${required_command##*/}")
 done
 if ((${#MISSING_DEPENDENCIES[@]})); then
@@ -136,6 +136,7 @@ install -d -o "$APP_USER" -g "$APP_GROUP" -m 0755 /var/cache/flightwall
 install -o root -g root -m 0644 "$SCRIPT_DIR/app.py" "$INSTALL_DIR/app.py"
 install -o root -g root -m 0755 "$SCRIPT_DIR/update_faa_registry.py" "$INSTALL_DIR/update_faa_registry.py"
 install -o root -g root -m 0755 "$SCRIPT_DIR/resource-monitor.sh" /usr/local/sbin/flightwall-resource-monitor
+install -o root -g root -m 0755 "$SCRIPT_DIR/hide-cursor.py" /usr/local/sbin/flightwall-hide-cursor
 install -o root -g root -m 0644 "$SCRIPT_DIR/config.json" "$INSTALL_DIR/config.json"
 cp -a "$SCRIPT_DIR/static" "$INSTALL_DIR/"
 chown -R root:root "$INSTALL_DIR/static"
@@ -152,6 +153,8 @@ install -o root -g root -m 0644 \
     "$SCRIPT_DIR/systemd/flightwall-resource-monitor.service" "/etc/systemd/system/flightwall-resource-monitor.service"
 install -o root -g root -m 0644 \
     "$SCRIPT_DIR/systemd/flightwall-resource-monitor.timer" "/etc/systemd/system/flightwall-resource-monitor.timer"
+install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/systemd/flightwall-hide-cursor@.service" "/etc/systemd/system/flightwall-hide-cursor@.service"
 
 KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
 KIOSK_GROUP="$(id -gn "$KIOSK_USER")"
@@ -243,16 +246,14 @@ status "Disabling the conflicting system-wide cursor hider"
 install -d -o root -g root -m 0755 /etc/default
 printf '%s\n' \
     '# Managed by Local Air Traffic deploy.sh' \
-    '# Openbox starts the only permitted unclutter instance.' \
+    '# Flightwall uses a systemd-managed XFixes client instead.' \
     'START_UNCLUTTER="false"' \
     'EXTRA_OPTS=""' \
     > "$LEGACY_UNCLUTTER_CONFIG"
 chmod 0644 "$LEGACY_UNCLUTTER_CONFIG"
-# Correct an already-running session without interrupting Chromium. Future
-# sessions are protected both by the disabled Xsession launcher and by the
-# defensive cleanup in the managed Openbox autostart script.
-pkill -u "$KIOSK_USER" -f '^/usr/bin/unclutter[[:space:]]+-idle[[:space:]]+1[[:space:]]+-root$' \
-    2>/dev/null || true
+# Remove every timeout-based cursor hider from the current session. The
+# systemd-managed XFixes client below is the sole cursor owner.
+pkill -u "$KIOSK_USER" -f '^(/usr/bin/)?unclutter([[:space:]]|$)' 2>/dev/null || true
 
 install -d -o root -g root -m 0755 /etc/lightdm/lightdm.conf.d
 if [[ -f "$LEGACY_LIGHTDM_CONFIG" ]]; then
@@ -293,6 +294,7 @@ systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 systemctl enable --force lightdm.service
 systemctl set-default graphical.target
+systemctl enable --now "flightwall-hide-cursor@$KIOSK_USER.service"
 
 LIGHTDM_UNIT="$(systemctl show lightdm.service --property=FragmentPath --value)"
 DISPLAY_MANAGER_UNIT="$(readlink -f /etc/systemd/system/display-manager.service || true)"
@@ -300,6 +302,10 @@ DISPLAY_MANAGER_UNIT="$(readlink -f /etc/systemd/system/display-manager.service 
     die "LightDM was not selected as the default display manager"
 grep -Fqx "autologin-user=$KIOSK_USER" /etc/lightdm/lightdm.conf.d/50-local-air-traffic.conf || \
     die "LightDM autologin configuration was not applied"
+systemctl is-active --quiet "flightwall-hide-cursor@$KIOSK_USER.service" || {
+    journalctl -u "flightwall-hide-cursor@$KIOSK_USER.service" -n 30 --no-pager >&2
+    die "permanent cursor suppression service did not start"
+}
 
 systemctl is-active --quiet "$SERVICE_NAME" || {
     journalctl -u "$SERVICE_NAME" -n 30 --no-pager >&2
