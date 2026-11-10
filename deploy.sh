@@ -7,6 +7,7 @@ APP_GROUP="flightwall"
 INSTALL_DIR="/opt/flightwall"
 SERVICE_NAME="flightwall.service"
 LEGACY_LIGHTDM_CONFIG="/etc/lightdm/lightdm.conf.d/50-flightwall-kiosk.conf"
+LEGACY_UNCLUTTER_CONFIG="/etc/default/unclutter"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/claytonbradley/flight-wall-clone.git"
 KIOSK_USER="kiosk"
@@ -237,6 +238,21 @@ install -d -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 "$KIOSK_HOME/.config"
 install -d -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 "$KIOSK_HOME/.config/openbox"
 install -o "$KIOSK_USER" -g "$KIOSK_GROUP" -m 0755 \
     "$SCRIPT_DIR/systemd/openbox-autostart" "$KIOSK_HOME/.config/openbox/autostart"
+
+status "Disabling the conflicting system-wide cursor hider"
+install -d -o root -g root -m 0755 /etc/default
+printf '%s\n' \
+    '# Managed by Local Air Traffic deploy.sh' \
+    '# Openbox starts the only permitted unclutter instance.' \
+    'START_UNCLUTTER="false"' \
+    'EXTRA_OPTS=""' \
+    > "$LEGACY_UNCLUTTER_CONFIG"
+chmod 0644 "$LEGACY_UNCLUTTER_CONFIG"
+# Correct an already-running session without interrupting Chromium. Future
+# sessions are protected both by the disabled Xsession launcher and by the
+# defensive cleanup in the managed Openbox autostart script.
+pkill -u "$KIOSK_USER" -f '^/usr/bin/unclutter[[:space:]]+-idle[[:space:]]+1[[:space:]]+-root$' \
+    2>/dev/null || true
 
 install -d -o root -g root -m 0755 /etc/lightdm/lightdm.conf.d
 if [[ -f "$LEGACY_LIGHTDM_CONFIG" ]]; then
