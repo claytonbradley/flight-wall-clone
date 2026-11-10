@@ -82,8 +82,9 @@ def hide_cursor_on_window_tree(x11, xfixes, display, root_window, hidden_windows
         if window in live_windows:
             continue
         live_windows.add(window)
-        if window not in hidden_windows:
-            xfixes.XFixesHideCursor(display, window)
+        # XFixes hide state can be undone by another X client. Reassert it for
+        # every live window on each scan so the pointer cannot remain exposed.
+        xfixes.XFixesHideCursor(display, window)
         pending_windows.extend(child_windows(x11, display, window))
 
     x11.XSync(display, False)

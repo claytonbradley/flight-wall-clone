@@ -35,12 +35,10 @@ class CursorWindowTreeTests(unittest.TestCase):
                 x11, xfixes, "display", 1, hidden_windows
             )
 
-        first_scan_windows = {
-            call.args[1] for call in xfixes.XFixesHideCursor.call_args_list[:3]
-        }
+        first_scan_windows = {call.args[1] for call in xfixes.XFixesHideCursor.call_args_list[:3]}
         self.assertEqual({1, 2, 3}, first_scan_windows)
-        self.assertEqual(mock.call("display", 4), xfixes.XFixesHideCursor.call_args_list[3])
-        self.assertEqual(4, xfixes.XFixesHideCursor.call_count)
+        self.assertEqual({1, 2, 3, 4}, {call.args[1] for call in xfixes.XFixesHideCursor.call_args_list[3:]})
+        self.assertEqual(7, xfixes.XFixesHideCursor.call_count)
         self.assertEqual({1, 2, 3, 4}, hidden_windows)
         self.assertEqual(2, x11.XSync.call_count)
 
@@ -61,7 +59,7 @@ class CursorWindowTreeTests(unittest.TestCase):
             hide_cursor.hide_cursor_on_window_tree(x11, xfixes, None, 1, hidden_windows)
 
         hidden_window_ids = [call.args[1] for call in xfixes.XFixesHideCursor.call_args_list]
-        self.assertEqual([1, 2, 2], hidden_window_ids)
+        self.assertEqual([1, 2, 1, 1, 2], hidden_window_ids)
 
 
 if __name__ == "__main__":
