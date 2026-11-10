@@ -54,6 +54,10 @@ The script installs the required Debian packages, validates `config.json`, runs 
 
 ### SSH maintenance access
 
+The active TV installation is the Raspberry Pi at `192.168.1.80` (`pi@192.168.1.80`, hostname `raspberrypi`). Confirm `uname -m` reports ARM and `DISPLAY=:0 xrandr --current` reports a connected display before changing its kiosk configuration. The Dell at `flightwall.local` / `192.168.1.151` is retired and is not the TV installation. Its checkout and running services do not verify the Pi's deployment state.
+
+The Pi currently has local application changes; preserve and review them before pulling or running the full installer. Cursor suppression is installed separately as `flightwall-hide-cursor@pi.service`, using `/usr/local/sbin/flightwall-hide-cursor` and the service template in `systemd/flightwall-hide-cursor@.service`.
+
 When the kiosk account does not yet have a password, the first deployment assigns the initial password `kiosk`. Rerunning deployment never overwrites a password that has subsequently been changed. The installer enables OpenSSH, disables direct root login, and restricts SSH login to the kiosk account. The account owns a checkout at `~/flight-wall-clone` and receives no general-purpose sudo permission. It can invoke only two named passwordless wrappers: `flightwall-deploy` and `flightwall-reboot`.
 
 From another computer on the same network:
