@@ -72,7 +72,7 @@ done
 [[ "$UPGRADE_SYSTEM" == false || "$SKIP_PACKAGES" == false ]] || \
     die "--upgrade-system cannot be combined with --skip-packages"
 
-for required in app.py update_faa_registry.py resource-monitor.sh hide-cursor.py config.json static systemd/flightwall.service systemd/flightwall-hide-cursor@.service systemd/flightwall-resource-monitor.service systemd/flightwall-resource-monitor.timer systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
+for required in app.py update_faa_registry.py resource-monitor.sh availability_monitor.py hide-cursor.py config.json static systemd/flightwall.service systemd/flightwall-hide-cursor@.service systemd/flightwall-resource-monitor.service systemd/flightwall-resource-monitor.timer systemd/flightwall-availability-monitor.service systemd/flightwall-availability-monitor.timer systemd/flightwall-watchdog.conf systemd/faa-registry-update.service systemd/faa-registry-update.timer systemd/openbox-autostart tests; do
     [[ -e "$SCRIPT_DIR/$required" ]] || die "missing project file: $required"
 done
 cd "$SCRIPT_DIR"
@@ -136,6 +136,7 @@ install -d -o "$APP_USER" -g "$APP_GROUP" -m 0755 /var/cache/flightwall
 install -o root -g root -m 0644 "$SCRIPT_DIR/app.py" "$INSTALL_DIR/app.py"
 install -o root -g root -m 0755 "$SCRIPT_DIR/update_faa_registry.py" "$INSTALL_DIR/update_faa_registry.py"
 install -o root -g root -m 0755 "$SCRIPT_DIR/resource-monitor.sh" /usr/local/sbin/flightwall-resource-monitor
+install -o root -g root -m 0755 "$SCRIPT_DIR/availability_monitor.py" /usr/local/sbin/flightwall-availability-monitor
 install -o root -g root -m 0755 "$SCRIPT_DIR/hide-cursor.py" /usr/local/sbin/flightwall-hide-cursor
 install -o root -g root -m 0644 "$SCRIPT_DIR/config.json" "$INSTALL_DIR/config.json"
 cp -a "$SCRIPT_DIR/static" "$INSTALL_DIR/"
@@ -154,7 +155,14 @@ install -o root -g root -m 0644 \
 install -o root -g root -m 0644 \
     "$SCRIPT_DIR/systemd/flightwall-resource-monitor.timer" "/etc/systemd/system/flightwall-resource-monitor.timer"
 install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/systemd/flightwall-availability-monitor.service" "/etc/systemd/system/flightwall-availability-monitor.service"
+install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/systemd/flightwall-availability-monitor.timer" "/etc/systemd/system/flightwall-availability-monitor.timer"
+install -o root -g root -m 0644 \
     "$SCRIPT_DIR/systemd/flightwall-hide-cursor@.service" "/etc/systemd/system/flightwall-hide-cursor@.service"
+install -d -o root -g root -m 0755 /etc/systemd/system.conf.d
+install -o root -g root -m 0644 \
+    "$SCRIPT_DIR/systemd/flightwall-watchdog.conf" "/etc/systemd/system.conf.d/flightwall-watchdog.conf"
 
 KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
 KIOSK_GROUP="$(id -gn "$KIOSK_USER")"
@@ -274,6 +282,7 @@ printf '/usr/sbin/lightdm\n' > /etc/X11/default-display-manager
 
 status "Reloading systemd service definitions"
 systemctl daemon-reload
+systemctl daemon-reexec
 
 status "Checking and, when needed, updating the FAA aircraft index"
 if ! runuser -u "$APP_USER" -- /usr/bin/python3 "$INSTALL_DIR/update_faa_registry.py" \
@@ -288,6 +297,16 @@ systemctl reset-failed faa-registry-update.service 2>/dev/null || true
 status "Enabling the Flightwall memory monitor"
 systemctl enable --now flightwall-resource-monitor.timer
 systemctl reset-failed flightwall-resource-monitor.service 2>/dev/null || true
+
+status "Enabling Flightwall availability recovery"
+systemctl enable --now flightwall-availability-monitor.timer
+systemctl reset-failed flightwall-availability-monitor.service 2>/dev/null || true
+if [[ -e /dev/watchdog ]]; then
+    [[ "$(systemctl show --property=RuntimeWatchdogUSec --value)" != "0" ]] || \
+        die "the hardware watchdog device exists but systemd did not enable it"
+else
+    warn "no hardware watchdog device was found; HTTP and network recovery remain active"
+fi
 
 status "Starting the Local Air Traffic backend and display manager"
 systemctl enable "$SERVICE_NAME"

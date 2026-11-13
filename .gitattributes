@@ -1,5 +1,7 @@
 *.sh text eol=lf
 hide-cursor.py text eol=lf
+availability_monitor.py text eol=lf
 systemd/openbox-autostart text eol=lf
+systemd/*.conf text eol=lf
 systemd/*.service text eol=lf
 systemd/*.timer text eol=lf
